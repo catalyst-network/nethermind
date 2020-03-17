@@ -23,7 +23,9 @@ ToC
    private_networks
    configuration
    cli
+   metrics
    jsonrpc
+   web3
    platforms
    firewall_configuration
    hardware_requirements

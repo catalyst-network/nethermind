@@ -1,28 +1,24 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Threading;
-using Nethermind.Core.Encoding;
+using System.Text;
 using Nethermind.Core.Extensions;
-using Nethermind.HashLib;
 
 namespace Nethermind.Core.Crypto
 {
@@ -63,14 +59,16 @@ namespace Nethermind.Core.Crypto
             return result;
         }
     }
-    
+
     [DebuggerStepThrough]
     public class Keccak : IEquatable<Keccak>
     {
-        internal const int Size = 32;
+        public const int Size = 32;
+
+        public int MemorySize => MemorySizes.ArrayOverhead + Size;
 
         public Keccak(string hexString)
-            : this(Extensions.Bytes.FromHexString(hexString))
+            : this(Core.Extensions.Bytes.FromHexString(hexString))
         {
         }
 
@@ -112,10 +110,10 @@ namespace Nethermind.Core.Crypto
             return ToString(true);
         }
         
-        public string ToShortString()
+        public string ToShortString(bool withZeroX = true)
         {
-            string hash = Bytes?.ToHexString(false);
-            return $"{hash?.Substring(0, 6)}...{hash?.Substring(hash.Length - 6)}";
+            string hash = Bytes?.ToHexString(withZeroX);
+            return $"{hash?.Substring(0, withZeroX ? 8 : 6)}...{hash?.Substring(hash.Length - 6)}";
         }
 
         public string ToString(bool withZeroX)
@@ -126,12 +124,6 @@ namespace Nethermind.Core.Crypto
             }
 
             return Bytes.ToHexString(withZeroX);
-        }
-
-        [DebuggerStepThrough]
-        public static Keccak Compute(Rlp rlp)
-        {
-            return InternalCompute(rlp.Bytes);
         }
 
         [DebuggerStepThrough]
@@ -179,7 +171,7 @@ namespace Nethermind.Core.Crypto
                 return false;
             }
 
-            return Extensions.Bytes.AreEqual(other.Bytes, Bytes);
+            return Core.Extensions.Bytes.AreEqual(other.Bytes, Bytes);
         }
 
         public override bool Equals(object obj)
@@ -204,7 +196,7 @@ namespace Nethermind.Core.Crypto
                 return false;
             }
 
-            return Extensions.Bytes.AreEqual(a.Bytes, b.Bytes);
+            return Core.Extensions.Bytes.AreEqual(a.Bytes, b.Bytes);
         }
 
         public static bool operator !=(Keccak a, Keccak b)

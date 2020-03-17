@@ -1,43 +1,43 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
-using Nethermind.Core.Encoding;
 using Nethermind.Core.Specs;
+using Nethermind.Db;
+using Nethermind.Specs;
 using Nethermind.Logging;
-using Nethermind.Store;
+using Nethermind.Serialization.Rlp;
+using Nethermind.State;
 
 namespace Nethermind.Blockchain.Receipts
 {
     public class PersistentReceiptStorage : IReceiptStorage
     {
         private readonly IDb _database;
-        private readonly IDb _headersFixDb;
         private readonly ISpecProvider _specProvider;
         private readonly ILogger _logger;
 
-        public PersistentReceiptStorage(IDb receiptsDb, IDb headersFixDb, ISpecProvider specProvider, ILogManager logManager)
+        public PersistentReceiptStorage(IDb receiptsDb, ISpecProvider specProvider, ILogManager logManager)
         {
             _logger = logManager?.GetClassLogger() ?? throw new ArgumentNullException(nameof(logManager));
             _database = receiptsDb ?? throw new ArgumentNullException(nameof(receiptsDb));
-            _headersFixDb = headersFixDb ?? throw new ArgumentNullException(nameof(headersFixDb));
             _specProvider = specProvider ?? throw new ArgumentNullException(nameof(specProvider));
 
             byte[] lowestBytes = _database.Get(Keccak.Zero);
@@ -46,10 +46,23 @@ namespace Nethermind.Blockchain.Receipts
 
         public TxReceipt Find(Keccak hash)
         {
-            var receiptData = _database.Get(hash) ?? _headersFixDb.Get(hash);
-            return receiptData == null
-                ? null
-                : Rlp.Decode<TxReceipt>(new Rlp(receiptData), RlpBehaviors.Storage);
+            var receiptData = _database.Get(hash);
+            if (receiptData != null)
+            {
+                try
+                {
+                    var receipt = Rlp.Decode<TxReceipt>(new Rlp(receiptData), RlpBehaviors.Storage);
+                    receipt.TxHash = hash;
+                    return receipt;
+                }
+                catch (RlpException)
+                {
+                    var receipt = Rlp.Decode<TxReceipt>(new Rlp(receiptData));
+                    receipt.TxHash = hash;
+                    return receipt;
+                }
+            }
+            return null;
         }
 
         public void Add(TxReceipt txReceipt, bool isProcessed)
@@ -87,6 +100,43 @@ namespace Nethermind.Blockchain.Receipts
             LowestInsertedReceiptBlock = blockNumber;
 //            LowestInsertedReceiptBlock = Math.Min(LowestInsertedReceiptBlock ?? long.MaxValue, blockNumber);
             _database.Set(Keccak.Zero, Rlp.Encode(LowestInsertedReceiptBlock.Value).Bytes);
+        }
+
+        public void Insert(List<(long blockNumber, TxReceipt txReceipt)> receipts)
+        {
+            if (!receipts.Any())
+            {
+                return;
+            }
+
+            long? blockNumber = null;
+            foreach ((long blockNumber, TxReceipt txReceipt) tuple in receipts)
+            {
+                blockNumber = tuple.blockNumber;
+                TxReceipt txReceipt = tuple.txReceipt;
+                if (txReceipt == null && blockNumber != 1L)
+                {
+                    throw new ArgumentNullException(nameof(txReceipt));
+                }
+
+                if (txReceipt != null)
+                {
+                    var spec = _specProvider.GetSpec(blockNumber.Value);
+                    RlpBehaviors behaviors = spec.IsEip658Enabled ? RlpBehaviors.Eip658Receipts : RlpBehaviors.None;
+                    _database.Set(txReceipt.TxHash, Rlp.Encode(txReceipt, behaviors).Bytes);
+                }
+            }
+
+            if (blockNumber.HasValue)
+            {
+                if (blockNumber > LowestInsertedReceiptBlock)
+                {
+                    _logger.Error($"{blockNumber} > {LowestInsertedReceiptBlock}");
+                }
+
+                LowestInsertedReceiptBlock = blockNumber;
+                _database.Set(Keccak.Zero, Rlp.Encode(LowestInsertedReceiptBlock.Value).Bytes);
+            }
         }
 
         public long? LowestInsertedReceiptBlock { get; private set; }

@@ -1,31 +1,29 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Reflection;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
 using Nethermind.Core.Extensions;
-using Nethermind.Core.Model;
 using Nethermind.Core.Test.Builders;
 using Nethermind.DataMarketplace.Channels;
 using Nethermind.DataMarketplace.Consumers.DataAssets.Domain;
@@ -37,9 +35,12 @@ using Nethermind.DataMarketplace.Consumers.Infrastructure.Rpc.Models;
 using Nethermind.DataMarketplace.Consumers.Providers.Domain;
 using Nethermind.DataMarketplace.Consumers.Sessions.Domain;
 using Nethermind.DataMarketplace.Consumers.Shared;
+using Nethermind.DataMarketplace.Consumers.Shared.Domain;
 using Nethermind.DataMarketplace.Core.Domain;
 using Nethermind.DataMarketplace.Core.Services;
+using Nethermind.DataMarketplace.Core.Services.Models;
 using Nethermind.DataMarketplace.Infrastructure.Rpc.Models;
+using Nethermind.Dirichlet.Numerics;
 using Nethermind.Facade;
 using Nethermind.JsonRpc;
 using Nethermind.JsonRpc.Modules;
@@ -54,6 +55,10 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
         private IDepositReportService _depositReportService;
         private IJsonRpcNdmConsumerChannel _jsonRpcNdmConsumerChannel;
         private IEthRequestService _ethRequestService;
+        private IEthPriceService _ethPriceService;
+        private IGasPriceService _gasPriceService;
+        private IConsumerTransactionsService _consumerTransactionsService;
+        private IConsumerGasLimitsService _gasLimitsService;
         private IPersonalBridge _personalBridge;
         private INdmRpcConsumerModule _rpc;
         private ITimestamper _timestamper;
@@ -67,10 +72,15 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
             _depositReportService = Substitute.For<IDepositReportService>();
             _jsonRpcNdmConsumerChannel = Substitute.For<IJsonRpcNdmConsumerChannel>();
             _ethRequestService = Substitute.For<IEthRequestService>();
+            _ethPriceService = Substitute.For<IEthPriceService>();
+            _gasPriceService = Substitute.For<IGasPriceService>();
+            _gasLimitsService = Substitute.For<IConsumerGasLimitsService>();
+            _consumerTransactionsService = Substitute.For<IConsumerTransactionsService>();
             _personalBridge = Substitute.For<IPersonalBridge>();
             _timestamper = new Timestamper(Date);
             _rpc = new NdmRpcConsumerModule(_consumerService, _depositReportService, _jsonRpcNdmConsumerChannel,
-                _ethRequestService, _personalBridge, _timestamper);
+                _ethRequestService, _ethPriceService, _gasPriceService, _consumerTransactionsService, _gasLimitsService,
+                _personalBridge, _timestamper);
         }
 
         [Test]
@@ -93,11 +103,20 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
         }
 
         [Test]
-        public void given_null_personal_bridge_list_accounts_should_not_return_accounts()
+        public void given_null_personal_bridge_list_accounts_should_return_no_accounts()
         {
-            _personalBridge = null;
-            _rpc = new NdmRpcConsumerModule(_consumerService, _depositReportService, _jsonRpcNdmConsumerChannel,
-                _ethRequestService, _personalBridge, _timestamper);
+            _personalBridge = NullPersonalBridge.Instance;
+            _rpc = new NdmRpcConsumerModule(
+                _consumerService,
+                _depositReportService,
+                _jsonRpcNdmConsumerChannel,
+                _ethRequestService,
+                _ethPriceService,
+                _gasPriceService,
+                _consumerTransactionsService,
+                _gasLimitsService,
+                _personalBridge,
+                _timestamper);
             var result = _rpc.ndm_listAccounts();
             result.Data.Should().BeEmpty();
         }
@@ -201,7 +220,7 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
             var result = await _rpc.ndm_getDeposit(depositId);
             await _consumerService.Received().GetDepositAsync(depositId);
             result.Result.ResultType.Should().Be(ResultType.Success);
-            result.ErrorType.Should().Be(ErrorType.None);
+            result.ErrorCode.Should().Be(ErrorCodes.None);
             result.Result.Error.Should().BeNullOrWhiteSpace();
             VerifyDepositDetails(result.Data);
         }
@@ -214,7 +233,7 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
             await _consumerService.Received().GetDepositAsync(depositId);
             result.Data.Should().BeNull();
             result.Result.ResultType.Should().Be(ResultType.Failure);
-            result.ErrorType.Should().Be(ErrorType.InternalError);
+            result.ErrorCode.Should().Be(ErrorCodes.InternalError);
             result.Result.Error.Should().NotBeNull();
         }
 
@@ -263,7 +282,7 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
             await _consumerService.Received().SendFinishSessionAsync(depositId);
             result.Data.Should().BeNull();
             result.Result.ResultType.Should().Be(ResultType.Failure);
-            result.ErrorType.Should().Be(ErrorType.InternalError);
+            result.ErrorCode.Should().Be(ErrorCodes.InternalError);
             result.Result.Error.Should().NotBeNull();
         }
 
@@ -289,7 +308,7 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
             await _consumerService.Received().EnableDataStreamAsync(depositId, client, args);
             result.Data.Should().BeNull();
             result.Result.ResultType.Should().Be(ResultType.Failure);
-            result.ErrorType.Should().Be(ErrorType.InternalError);
+            result.ErrorCode.Should().Be(ErrorCodes.InternalError);
             result.Result.Error.Should().NotBeNull();
         }
 
@@ -313,7 +332,29 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
             await _consumerService.Received().DisableDataStreamAsync(depositId, client);
             result.Data.Should().BeNull();
             result.Result.ResultType.Should().Be(ResultType.Failure);
-            result.ErrorType.Should().Be(ErrorType.InternalError);
+            result.ErrorCode.Should().Be(ErrorCodes.InternalError);
+            result.Result.Error.Should().NotBeNull();
+        }
+        
+        [Test]
+        public async Task disable_data_streams_should_return_deposit_id()
+        {
+            var depositId = TestItem.KeccakA;
+            _consumerService.DisableDataStreamsAsync(depositId).Returns(depositId);
+            var result = await _rpc.ndm_disableDataStreams(depositId);
+            await _consumerService.Received().DisableDataStreamsAsync(depositId);
+            result.Data.Should().Be(depositId);
+        }
+
+        [Test]
+        public async Task disable_data_streams_should_fail_if_deposit_was_not_found()
+        {
+            var depositId = TestItem.KeccakA;
+            var result = await _rpc.ndm_disableDataStreams(depositId);
+            await _consumerService.Received().DisableDataStreamsAsync(depositId);
+            result.Data.Should().BeNull();
+            result.Result.ResultType.Should().Be(ResultType.Failure);
+            result.ErrorCode.Should().Be(ErrorCodes.InternalError);
             result.Result.Error.Should().NotBeNull();
         }
 
@@ -347,7 +388,7 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
         {
             var query = new GetConsumerDepositApprovals();
             var approval = new DepositApproval(Keccak.Zero, TestItem.KeccakA, "test", "kyc",
-                TestItem.AddressA, TestItem.AddressB, 1);
+                TestItem.AddressA, TestItem.AddressB, 1, DepositApprovalState.Pending);
             _consumerService.GetDepositApprovalsAsync(query)
                 .Returns(PagedResult<DepositApproval>.Create(new[] {approval}, 1, 1, 1, 1));
             var result = await _rpc.ndm_getConsumerDepositApprovals(query);
@@ -420,7 +461,158 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
             _jsonRpcNdmConsumerChannel.Received().Pull(depositId);
             result.Data.Should().Be(data);
         }
+        
+        [Test]
+        public async Task get_proxy_should_return_proxy_info()
+        {
+            var ndmProxy = new NdmProxy(true, new[] {"http://localhost:8545"});
+            _consumerService.GetProxyAsync().Returns(ndmProxy);
+            var result = await _rpc.ndm_getProxy();
+            result.Data.Enabled.Should().Be(ndmProxy.Enabled);
+            result.Data.Urls.Should().BeSameAs(ndmProxy.Urls);
+            await _consumerService.Received().GetProxyAsync();
+        }
+        
+        [Test]
+        public async Task set_proxy_should_return_true()
+        {
+            var urls = new[] {"http://localhost:8545"};
+            var result = await _rpc.ndm_setProxy(urls);
+            result.Data.Should().BeTrue();
+            await _consumerService.Received().SetProxyAsync(urls);
+        }
 
+        [Test]
+        public void get_eth_usd_price_should_return_amount()
+        {
+            const decimal price = 187;
+            const ulong updatedAt = 123456789;
+            _ethPriceService.UsdPrice.Returns(price);
+            _ethPriceService.UpdatedAt.Returns(updatedAt);
+            var result = _rpc.ndm_getEthUsdPrice();
+            result.Data.Price.Should().Be(price);
+            result.Data.UpdatedAt.Should().Be(updatedAt);
+        }
+
+        [Test]
+        public void get_gas_price_should_return_types()
+        {
+            const string type = "test";
+            const ulong updatedAt = 123456789;
+            var safeLow = new GasPriceDetails(1, 1000);
+            var average = new GasPriceDetails(10, 100);
+            var fast = new GasPriceDetails(100, 100);
+            var fastest = new GasPriceDetails(1000, 1);
+            var custom = new GasPriceDetails(500, 2);
+            _gasPriceService.Types.Returns(new GasPriceTypes(safeLow, average, fast, fastest, custom, type, updatedAt));
+            var result = _rpc.ndm_getGasPrice();
+            VerifyGasPrice(result.Data.SafeLow, safeLow);
+            VerifyGasPrice(result.Data.Average, average);
+            VerifyGasPrice(result.Data.Fast, fast);
+            VerifyGasPrice(result.Data.Fastest, fastest);
+            VerifyGasPrice(result.Data.Custom, custom);
+            result.Data.Type.Should().Be(type);
+            result.Data.UpdatedAt.Should().Be(updatedAt);
+        }
+
+        [Test]
+        public async Task set_gas_price_should_return_true()
+        {
+            const string type = "test";
+            var result = await _rpc.ndm_setGasPrice(type);
+            result.Data.Should().BeTrue();
+            await _gasPriceService.Received().SetAsync(type);
+        }
+        
+        [Test]
+        public async Task update_deposit_gas_price_should_return_transaction_hash()
+        {
+            var depositId = TestItem.KeccakA;
+            var gasPrice = 20.GWei();
+            var info = new UpdatedTransactionInfo(UpdatedTransactionStatus.Ok, TestItem.KeccakB);
+            _consumerTransactionsService.UpdateDepositGasPriceAsync(depositId, gasPrice).Returns(info);
+            var result = await _rpc.ndm_updateDepositGasPrice(depositId, gasPrice);
+            result.Data.Status.Should().Be(info.Status.ToString().ToLowerInvariant());
+            result.Data.Hash.Should().Be(info.Hash);
+            await _consumerTransactionsService.Received().UpdateDepositGasPriceAsync(depositId, gasPrice);
+        }
+        
+        [Test]
+        public async Task update_refund_gas_price_should_return_transaction_hash()
+        {
+            var depositId = TestItem.KeccakA;
+            var gasPrice = 20.GWei();
+            var info = new UpdatedTransactionInfo(UpdatedTransactionStatus.Ok, TestItem.KeccakB);
+            _consumerTransactionsService.UpdateRefundGasPriceAsync(depositId, gasPrice).Returns(info);
+            var result = await _rpc.ndm_updateRefundGasPrice(depositId, gasPrice);
+            result.Data.Status.Should().Be(info.Status.ToString().ToLowerInvariant());
+            result.Data.Hash.Should().Be(info.Hash);
+            await _consumerTransactionsService.Received().UpdateRefundGasPriceAsync(depositId, gasPrice);
+        }
+        
+        [Test]
+        public async Task cancel_deposit_should_return_transaction_hash()
+        {
+            var depositId = TestItem.KeccakA;
+            var info = new UpdatedTransactionInfo(UpdatedTransactionStatus.Ok, TestItem.KeccakB);
+            _consumerTransactionsService.CancelDepositAsync(depositId).Returns(info);
+            var result = await _rpc.ndm_cancelDeposit(depositId);
+            result.Data.Status.Should().Be(info.Status.ToString().ToLowerInvariant());
+            result.Data.Hash.Should().Be(info.Hash);
+            await _consumerTransactionsService.Received().CancelDepositAsync(depositId);
+        }
+        
+        [Test]
+        public async Task cancel_refund_should_return_transaction_hash()
+        {
+            var depositId = TestItem.KeccakA;
+            var info = new UpdatedTransactionInfo(UpdatedTransactionStatus.Ok, TestItem.KeccakB);
+            _consumerTransactionsService.CancelRefundAsync(depositId).Returns(info);
+            var result = await _rpc.ndm_cancelRefund(depositId);
+            result.Data.Status.Should().Be(info.Status.ToString().ToLowerInvariant());
+            result.Data.Hash.Should().Be(info.Hash);
+            await _consumerTransactionsService.Received().CancelRefundAsync(depositId);
+        }
+
+        [Test]
+        public async Task get_consumer_pending_transactions_should_return_data()
+        {
+            var pendingTransactions = new List<PendingTransaction>
+            {
+                new PendingTransaction(TestItem.KeccakA.ToString(), "test", TransactionInfo.Default(TestItem.KeccakB,
+                    1.Ether(), 20.GWei(), 10, _timestamper.EpochSeconds))
+            };
+            var transaction = pendingTransactions[0];
+            _consumerTransactionsService.GetPendingAsync().Returns(pendingTransactions);
+            var result = await _rpc.ndm_getConsumerPendingTransactions();
+            await _consumerTransactionsService.Received().GetPendingAsync();
+            result.Data.Should().NotBeEmpty();
+            result.Data.Should().ContainSingle(t =>
+                t.ResourceId == transaction.ResourceId && t.Type == transaction.Type &&
+                t.Transaction.Hash == transaction.Transaction.Hash &&
+                t.Transaction.Value == transaction.Transaction.Value &&
+                t.Transaction.GasPrice == transaction.Transaction.GasPrice &&
+                t.Transaction.GasLimit == transaction.Transaction.GasLimit &&
+                t.Transaction.MaxFee == transaction.Transaction.GasPrice * transaction.Transaction.GasLimit &&
+                t.Transaction.Timestamp == transaction.Transaction.Timestamp);
+        }
+        
+        [Test]
+        public void get_consumer_gas_limits_should_return_data()
+        {
+            var gasLimits = new GasLimits(70000, 90000);
+            _gasLimitsService.GasLimits.Returns(gasLimits);
+            var result = _rpc.ndm_getConsumerGasLimits();
+            result.Data.Deposit.Should().Be(gasLimits.Deposit);
+            result.Data.Refund.Should().Be(gasLimits.Refund);
+        }
+
+        private static void VerifyGasPrice(GasPriceDetailsForRpc rpcGasPrice, GasPriceDetails gasPrice)
+        {
+            rpcGasPrice.Price.Should().Be(gasPrice.Price);
+            rpcGasPrice.WaitTime.Should().Be(gasPrice.WaitTime);
+        }
+        
         private static void VerifyDepositReportItem(DepositReportItemForRpc rpcItem, DepositReportItem item)
         {
             rpcItem.Id.Should().Be(item.Id);
@@ -500,15 +692,20 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
             deposit.Id.Should().Be(Keccak.OfAnEmptyString);
             deposit.Deposit.Should().NotBeNull();
             deposit.Deposit.Id.Should().Be(Keccak.OfAnEmptyString);
-            deposit.Deposit.Units.Should().Be(1);
-            deposit.Deposit.Value.Should().Be(1);
-            deposit.Deposit.ExpiryTime.Should().Be(DepositExpiryTime);
+            deposit.Deposit.Units.Should().Be((uint?)1);
+            deposit.Deposit.Value.Should().Be((BigInteger?)BigInteger.One);
+            deposit.Deposit.ExpiryTime.Should().Be((uint?)DepositExpiryTime);
             deposit.Timestamp.Should().Be(1);
-            deposit.TransactionHash.Should().Be(TestItem.KeccakA);
+            deposit.Transaction.Hash.Should().Be(TestItem.KeccakA);
+            deposit.Transaction.Value.Should().Be((UInt256?)UInt256.One);
+            deposit.Transaction.GasPrice.Should().Be((UInt256?)UInt256.One);
+            deposit.Transaction.GasLimit.Should().Be((ulong?)1);
+            deposit.Transaction.MaxFee.Should().Be(deposit.Transaction.GasPrice * deposit.Transaction.GasLimit);
+            deposit.Transaction.Timestamp.Should().Be(deposit.Transaction.Timestamp);
             deposit.Confirmed.Should().Be(false);
             deposit.Expired.Should().Be(false);
             deposit.RefundClaimed.Should().Be(false);
-            deposit.ClaimedRefundTransactionHash.Should().BeNull();
+            deposit.ClaimedRefundTransaction.Should().BeNull();
             deposit.ConsumedUnits.Should().Be(0);
             deposit.Kyc.Should().BeNullOrEmpty();
             VerifyDataAsset(deposit.DataAsset);
@@ -520,7 +717,7 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
             dataAsset.Id.Should().NotBeNull();
             dataAsset.Name.Should().Be("test");
             dataAsset.Description.Should().Be("test");
-            dataAsset.UnitPrice.Should().Be(1);
+            dataAsset.UnitPrice.Should().Be((BigInteger?)BigInteger.One);
             dataAsset.UnitType.Should().Be(DataAssetUnitType.Unit.ToString().ToLowerInvariant());
             dataAsset.QueryType.Should().Be(QueryType.Stream.ToString().ToLowerInvariant());
             dataAsset.MinUnits.Should().Be(0);
@@ -550,7 +747,8 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Infrastructure
 
         private static DepositDetails GetDepositDetails()
             => new DepositDetails(new Deposit(Keccak.OfAnEmptyString, 1, DepositExpiryTime, 1),
-                GetDataAsset(), TestItem.AddressB, Array.Empty<byte>(), 1, TestItem.KeccakA);
+                GetDataAsset(), TestItem.AddressB, Array.Empty<byte>(), 1,
+                new[] {TransactionInfo.Default(TestItem.KeccakA, 1, 1, 1, 1)});
 
         private static DepositReportItem GetDepositReportItem()
             => new DepositReportItem(Keccak.Zero, TestItem.KeccakA, "test", TestItem.AddressA,

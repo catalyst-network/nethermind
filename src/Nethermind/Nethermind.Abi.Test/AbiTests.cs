@@ -1,21 +1,20 @@
-﻿/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+﻿//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
+using System;
 using System.Numerics;
 using System.Text;
 using MathNet.Numerics;
@@ -239,6 +238,33 @@ namespace Nethermind.Abi.Test
             object[] arguments = _abiEncoder.Decode(encodingStyle, signature, encoded);
             Assert.AreEqual(BigInteger.MinusOne, arguments[0]);
         }
+        
+        [TestCase(AbiEncodingStyle.None)]
+        public void Test_single_uint_with_casting(AbiEncodingStyle encodingStyle)
+        {
+            AbiType type = AbiType.UInt256;
+            AbiSignature signature = new AbiSignature("abc", type);
+            
+            byte[] encoded = _abiEncoder.Encode(encodingStyle, signature, UInt256.One);
+            object[] arguments = _abiEncoder.Decode(encodingStyle, signature, encoded);
+            Assert.AreEqual(BigInteger.One, arguments[0]);
+            
+            encoded = _abiEncoder.Encode(encodingStyle, signature, 1L);
+            arguments = _abiEncoder.Decode(encodingStyle, signature, encoded);
+            Assert.AreEqual(BigInteger.One, arguments[0]);
+            
+            encoded = _abiEncoder.Encode(encodingStyle, signature, 1UL);
+            arguments = _abiEncoder.Decode(encodingStyle, signature, encoded);
+            Assert.AreEqual(BigInteger.One, arguments[0]);
+            
+            encoded = _abiEncoder.Encode(encodingStyle, signature, 1);
+            arguments = _abiEncoder.Decode(encodingStyle, signature, encoded);
+            Assert.AreEqual(BigInteger.One, arguments[0]);
+            
+            encoded = _abiEncoder.Encode(encodingStyle, signature, 1U);
+            arguments = _abiEncoder.Decode(encodingStyle, signature, encoded);
+            Assert.AreEqual(BigInteger.One, arguments[0]);
+        }
 
         [TestCase(AbiEncodingStyle.IncludeSignature)]
         [TestCase(AbiEncodingStyle.IncludeSignature | AbiEncodingStyle.Packed)]
@@ -293,6 +319,44 @@ namespace Nethermind.Abi.Test
             byte[] encoded = _abiEncoder.Encode(encodingStyle, signature, data);
             object[] arguments = _abiEncoder.Decode(encodingStyle, signature, encoded);
             Assert.AreEqual(arguments[0], data);
+        }
+        
+        [TestCase(0, 0)]
+        [TestCase(0, 19)]
+        [TestCase(8, 0)]
+        [TestCase(256 + 8, 19)]
+        [TestCase(8, 128)]
+        [TestCase(9, 8)]
+        public void Test_ufixed_exception(int length, int precision)
+        {
+            Assert.Throws<ArgumentException>(() => _ = new AbiUFixed(length, precision));
+        }
+        
+        [TestCase(0, 0)]
+        [TestCase(0, 19)]
+        [TestCase(8, 0)]
+        [TestCase(256 + 8, 19)]
+        [TestCase(8, 128)]
+        [TestCase(9, 8)]
+        public void Test_fixed_exception(int length, int precision)
+        {
+            Assert.Throws<ArgumentException>(() => _ = new AbiFixed(length, precision));
+        }
+        
+        [TestCase(0)]
+        [TestCase(7)]
+        [TestCase(264)]
+        public void Test_int_exception(int length)
+        {
+            Assert.Throws<ArgumentException>(() => _ = new AbiInt(length));
+        }
+        
+        [TestCase(0)]
+        [TestCase(7)]
+        [TestCase(264)]
+        public void Test_uint_exception(int length)
+        {
+            Assert.Throws<ArgumentException>(() => _ = new AbiUInt(length));
         }
 
         [TestCase(AbiEncodingStyle.IncludeSignature)]

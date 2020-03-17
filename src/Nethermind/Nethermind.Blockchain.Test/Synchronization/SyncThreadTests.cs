@@ -1,47 +1,51 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
+using Nethermind.Blockchain.Producers;
 using Nethermind.Blockchain.Receipts;
 using Nethermind.Blockchain.Rewards;
-using Nethermind.Blockchain.Synchronization;
-using Nethermind.Blockchain.Synchronization.FastSync;
-using Nethermind.Blockchain.TxPools;
-using Nethermind.Blockchain.TxPools.Storages;
 using Nethermind.Blockchain.Validators;
 using Nethermind.Core;
-using Nethermind.Core.Crypto;
-using Nethermind.Core.Encoding;
 using Nethermind.Core.Extensions;
-using Nethermind.Core.Specs;
-using Nethermind.Core.Specs.Forks;
+using Nethermind.Specs;
+using Nethermind.Specs.Forks;
 using Nethermind.Core.Test.Builders;
+using Nethermind.Crypto;
 using Nethermind.Dirichlet.Numerics;
 using Nethermind.Evm;
-using Nethermind.Evm.Tracing;
 using Nethermind.Logging;
 using Nethermind.Stats;
 using Nethermind.Store;
-using Nethermind.Store.Repositories;
+using Nethermind.Blockchain.Synchronization;
+using Nethermind.Blockchain.Synchronization.BeamSync;
+using Nethermind.Blockchain.Synchronization.FastSync;
+using Nethermind.Blockchain.Test.Validators;
+using Nethermind.Db;
+using Nethermind.Evm.Tracing.ParityStyle;
+using Nethermind.Serialization.Rlp;
+using Nethermind.State;
+using Nethermind.State.Repositories;
+using Nethermind.Store.Bloom;
+using Nethermind.TxPool;
+using Nethermind.TxPool.Storages;
 using NUnit.Framework;
 
 namespace Nethermind.Blockchain.Test.Synchronization
@@ -160,9 +164,9 @@ namespace Nethermind.Blockchain.Test.Synchronization
                 transaction.Nonce = (UInt256) i;
                 transaction.GasLimit = 21000;
                 transaction.GasPrice = 20.GWei();
-                transaction.Hash = Transaction.CalculateHash(transaction);
+                transaction.Hash = transaction.CalculateHash();
                 _originPeer.Ecdsa.Sign(TestItem.PrivateKeyA, transaction, i);
-                _originPeer.TxPool.AddTransaction(transaction, i);
+                _originPeer.TxPool.AddTransaction(transaction, i, TxHandlingOptions.None);
                 if (!resetEvent.WaitOne(1000))
                 {
                     throw new Exception($"Failed to produce block {i + 1}");
@@ -234,32 +238,31 @@ namespace Nethermind.Blockchain.Test.Synchronization
 
         private SyncTestContext CreateSyncManager(int index)
         {
-            Rlp.RegisterDecoders(typeof(ParityTraceDecoder).Assembly);
-
             var logManager = NoErrorLimboLogs.Instance;
             ConsoleAsyncLogger logger = new ConsoleAsyncLogger(LogLevel.Debug, "PEER " + index + " ");
 //            var logManager = new OneLoggerLogManager(logger);
             var specProvider = new SingleReleaseSpecProvider(ConstantinopleFix.Instance, MainNetSpecProvider.Instance.ChainId);
 
-            MemDb traceDb = new MemDb();
             MemDb blockDb = new MemDb();
             MemDb headerDb = new MemDb();
             MemDb blockInfoDb = new MemDb();
             StateDb codeDb = new StateDb();
             StateDb stateDb = new StateDb();
 
+            var stateReader = new StateReader(stateDb, codeDb, logManager);
             var stateProvider = new StateProvider(stateDb, codeDb, logManager);
             stateProvider.CreateAccount(TestItem.AddressA, 10000.Ether());
             stateProvider.Commit(specProvider.GenesisSpec);
             stateProvider.CommitTree();
+            stateProvider.RecalculateStateRoot();
             stateDb.Commit();
 
             var storageProvider = new StorageProvider(stateDb, stateProvider, logManager);
             var receiptStorage = new InMemoryReceiptStorage();
 
             var ecdsa = new EthereumEcdsa(specProvider, logManager);
-            var txPool = new TxPool(new InMemoryTxStorage(), new Timestamper(), ecdsa, specProvider, new TxPoolConfig(), stateProvider, logManager);
-            var tree = new BlockTree(blockDb, headerDb, blockInfoDb, new ChainLevelInfoRepository(blockInfoDb), specProvider, txPool, logManager);
+            var txPool = new TxPool.TxPool(new InMemoryTxStorage(), new Timestamper(), ecdsa, specProvider, new TxPoolConfig(), stateProvider, logManager);
+            var tree = new BlockTree(blockDb, headerDb, blockInfoDb, new ChainLevelInfoRepository(blockInfoDb), specProvider, txPool, NullBloomStorage.Instance, logManager);
             var blockhashProvider = new BlockhashProvider(tree, LimboLogs.Instance);
             var virtualMachine = new VirtualMachine(stateProvider, storageProvider, blockhashProvider, specProvider, logManager);
 
@@ -275,32 +278,33 @@ namespace Nethermind.Blockchain.Test.Synchronization
 
             var rewardCalculator = new RewardCalculator(specProvider);
             var txProcessor = new TransactionProcessor(specProvider, stateProvider, storageProvider, virtualMachine, logManager);
-            var blockProcessor = new BlockProcessor(specProvider, blockValidator, rewardCalculator, txProcessor, stateDb, codeDb, traceDb, stateProvider, storageProvider, txPool, receiptStorage, logManager);
+            var blockProcessor = new BlockProcessor(specProvider, blockValidator, rewardCalculator, txProcessor, stateDb, codeDb, stateProvider, storageProvider, txPool, receiptStorage, logManager);
 
             var step = new TxSignaturesRecoveryStep(ecdsa, txPool, logManager);
-            var processor = new BlockchainProcessor(tree, blockProcessor, step, logManager, true, true);
+            var processor = new BlockchainProcessor(tree, blockProcessor, step, logManager, true);
 
             var nodeStatsManager = new NodeStatsManager(new StatsConfig(), logManager);
-            var syncPeerPool = new EthSyncPeerPool(tree, nodeStatsManager, syncConfig, 25, logManager);
+            var syncPeerPool = new EthSyncPeerPool(tree, nodeStatsManager, 25, logManager);
 
             StateProvider devState = new StateProvider(stateDb, codeDb, logManager);
             StorageProvider devStorage = new StorageProvider(stateDb, devState, logManager);
             var devEvm = new VirtualMachine(devState, devStorage, blockhashProvider, specProvider, logManager);
             var devTxProcessor = new TransactionProcessor(specProvider, devState, devStorage, devEvm, logManager);
-            var devBlockProcessor = new BlockProcessor(specProvider, blockValidator, rewardCalculator, devTxProcessor, stateDb, codeDb, traceDb, devState, devStorage, txPool, receiptStorage, logManager);
-            var devChainProcessor = new BlockchainProcessor(tree, devBlockProcessor, step, logManager, false, false);
-            var producer = new DevBlockProducer(txPool, devChainProcessor, tree, new Timestamper(), logManager);
+            var devBlockProcessor = new BlockProcessor(specProvider, blockValidator, rewardCalculator, devTxProcessor, stateDb, codeDb, devState, devStorage, txPool, receiptStorage, logManager);
+            var devChainProcessor = new BlockchainProcessor(tree, devBlockProcessor, step, logManager, false);
+            var transactionSelector = new PendingTxSelector(txPool, stateReader, logManager);
+            var producer = new DevBlockProducer(transactionSelector, devChainProcessor, stateProvider, tree, processor, txPool, new Timestamper(), logManager);
 
             NodeDataFeed feed = new NodeDataFeed(codeDb, stateDb, logManager);
-            NodeDataDownloader downloader = new NodeDataDownloader(syncPeerPool, feed, logManager);
+            NodeDataDownloader downloader = new NodeDataDownloader(syncPeerPool, feed, NullDataConsumer.Instance,  logManager);
             Synchronizer synchronizer = new Synchronizer(
                 MainNetSpecProvider.Instance,
                 tree,
                 NullReceiptStorage.Instance,
                 blockValidator,
                 sealValidator,
-                syncPeerPool, syncConfig, downloader, NullSyncReport.Instance, logManager);
-            var syncServer = new SyncServer(stateDb, codeDb, tree, receiptStorage, TestSealValidator.AlwaysValid, syncPeerPool, synchronizer, syncConfig, logManager);
+                syncPeerPool, syncConfig, downloader, nodeStatsManager, logManager);
+            var syncServer = new SyncServer(stateDb, codeDb, tree, receiptStorage, TestBlockValidator.AlwaysValid, TestSealValidator.AlwaysValid, syncPeerPool, synchronizer, syncConfig, logManager);
 
             ManualResetEventSlim waitEvent = new ManualResetEventSlim();
             tree.NewHeadBlock += (s, e) => waitEvent.Set();

@@ -1,20 +1,18 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Collections.Generic;
@@ -29,11 +27,13 @@ using Nethermind.DataMarketplace.Consumers.DataRequests.Services;
 using Nethermind.DataMarketplace.Consumers.Deposits;
 using Nethermind.DataMarketplace.Consumers.Deposits.Domain;
 using Nethermind.DataMarketplace.Consumers.Notifiers;
+using Nethermind.DataMarketplace.Consumers.Notifiers.Services;
 using Nethermind.DataMarketplace.Consumers.Providers;
 using Nethermind.DataMarketplace.Consumers.Sessions.Domain;
 using Nethermind.DataMarketplace.Consumers.Sessions.Queries;
 using Nethermind.DataMarketplace.Consumers.Sessions.Repositories;
 using Nethermind.DataMarketplace.Core.Domain;
+using Nethermind.DataMarketplace.Core.Services;
 using Nethermind.Logging;
 using Nethermind.Wallet;
 using NSubstitute;
@@ -55,6 +55,7 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Services.DataRequets
         private const uint DepositConfirmationTimestamp = 1546300800;
         private const uint DepositExpiryTime = 1546393600;
         private static readonly DateTime Date = new DateTime(2019, 1, 2); //1546383600
+        private INdmNotifier _notifier;
 
         [SetUp]
         public void Setup()
@@ -66,7 +67,8 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Services.DataRequets
             _providerService = Substitute.For<IProviderService>();
             _timestamper = new Timestamper(Date);
             _sessionRepository = Substitute.For<IConsumerSessionRepository>();
-            _consumerNotifier = Substitute.For<IConsumerNotifier>();
+            _notifier = Substitute.For<INdmNotifier>();
+            _consumerNotifier = new ConsumerNotifier(_notifier);
             _dataRequestService = new DataRequestService(_dataRequestFactory, _depositProvider, _kycVerifier, _wallet,
                 _providerService, _timestamper, _sessionRepository, _consumerNotifier, LimboLogs.Instance);
         }
@@ -195,7 +197,7 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Services.DataRequets
             _dataRequestFactory.Received(1).Create(deposit.Deposit, deposit.DataAsset.Id,
                 deposit.DataAsset.Provider.Address, deposit.Consumer, deposit.Pepper);
             await provider.Received(1).SendDataRequestAsync(dataRequest, consumedUnits);
-            await _consumerNotifier.Received(1).SendDataRequestResultAsync(depositId, result);
+            await _notifier.ReceivedWithAnyArgs(1).NotifyAsync(null);
         }
 
         private static ConsumerSession GetConsumerSession()
@@ -206,8 +208,8 @@ namespace Nethermind.DataMarketplace.Consumers.Test.Services.DataRequets
         private static DepositDetails GetDepositDetails(uint confirmationTimestamp = 0, uint expiryTime = 1,
             bool kycRequired = false)
             => new DepositDetails(new Deposit(Keccak.Zero, 1, expiryTime, 1),
-                GetDataAsset(kycRequired), TestItem.AddressB, Array.Empty<byte>(), 1, TestItem.KeccakA,
-                confirmationTimestamp);
+                GetDataAsset(kycRequired), TestItem.AddressB, Array.Empty<byte>(), 1,
+                new []{TransactionInfo.Default(TestItem.KeccakA, 1, 1, 1, 1)}, confirmationTimestamp);
 
         private static DataAsset GetDataAsset(bool kycRequired = false)
             => new DataAsset(Keccak.OfAnEmptyString, "test", "test", 1,

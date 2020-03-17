@@ -1,20 +1,18 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Collections.Concurrent;
@@ -23,7 +21,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
-using Nethermind.Core.Model;
+using Nethermind.Crypto;
 using Nethermind.Logging;
 using Nethermind.DataMarketplace.Channels;
 using Nethermind.DataMarketplace.Consumers;
@@ -39,10 +37,11 @@ using Nethermind.Network.Rlpx;
 using Nethermind.Stats;
 using Nethermind.Stats.Model;
 using Nethermind.Wallet;
+using Metrics = Nethermind.DataMarketplace.Consumers.Metrics;
 
 namespace Nethermind.DataMarketplace.Subprotocols
 {
-    public class NdmSubprotocol : ProtocolHandlerBase, INdmPeer, INdmSubprotocol
+    public class NdmSubprotocol : ProtocolHandlerBase, INdmPeer
     {
         protected readonly IDictionary<int, Action<Packet>> MessageHandlers;
         protected int DisposedValue;
@@ -67,35 +66,46 @@ namespace Nethermind.DataMarketplace.Subprotocols
         protected Address ConfiguredConsumerAddress;
         protected readonly bool VerifySignature;
         protected bool HiReceived;
+        public override string Name => "ndm";
         protected override TimeSpan InitTimeout => Timeouts.NdmHi;
-        public byte ProtocolVersion { get; } = 1;
-        public string ProtocolCode { get; } = Protocol.Ndm;
-        public int MessageIdSpaceSize { get; } = 0x1F;
+        public override byte ProtocolVersion { get; protected set; } = 1;
+        public override string ProtocolCode => Protocol.Ndm;
+        public override int MessageIdSpaceSize => 0x1F;
 
-        public bool HasAvailableCapability(Capability capability) => false;
-        public bool HasAgreedCapability(Capability capability) => false;
-        public void AddSupportedCapability(Capability capability)
+        public override bool HasAvailableCapability(Capability capability) => false;
+        public override bool HasAgreedCapability(Capability capability) => false;
+        public override void AddSupportedCapability(Capability capability)
         {
         }
 
-        public event EventHandler<ProtocolInitializedEventArgs> ProtocolInitialized;
-        public event EventHandler<ProtocolEventArgs> SubprotocolRequested
+        public override event EventHandler<ProtocolInitializedEventArgs>? ProtocolInitialized;
+        public override event EventHandler<ProtocolEventArgs> SubprotocolRequested
         {
             add { }
             remove { }
         }
 
         public PublicKey NodeId => Session.RemoteNodeId;
-        public Address ConsumerAddress { get; protected set; }
-        public Address ProviderAddress { get; protected set; }
+        public Address? ConsumerAddress { get; protected set; }
+        public Address? ProviderAddress { get; protected set; }
         public bool IsConsumer => !(ConsumerAddress is null) && ConsumerAddress != Address.Zero;
         public bool IsProvider => !(ProviderAddress is null) && ProviderAddress != Address.Zero;
 
-        public NdmSubprotocol(ISession p2PSession, INodeStatsManager nodeStatsManager,
-            IMessageSerializationService serializer, ILogManager logManager, IConsumerService consumerService,
-            INdmConsumerChannelManager ndmConsumerChannelManager, IEcdsa ecdsa, IWallet wallet, INdmFaucet faucet,
-            PublicKey configuredNodeId, Address configuredProviderAddress, Address configuredConsumerAddress,
-            bool verifySignature = true) : base(p2PSession, nodeStatsManager, serializer, logManager)
+        public NdmSubprotocol(
+            ISession p2PSession,
+            INodeStatsManager nodeStatsManager,
+            IMessageSerializationService serializer,
+            ILogManager logManager,
+            IConsumerService consumerService,
+            INdmConsumerChannelManager ndmConsumerChannelManager,
+            IEcdsa ecdsa,
+            IWallet wallet,
+            INdmFaucet faucet,
+            PublicKey configuredNodeId,
+            Address configuredProviderAddress,
+            Address configuredConsumerAddress,
+            bool verifySignature = true)
+            : base(p2PSession, nodeStatsManager, serializer, logManager)
         {
             Ecdsa = ecdsa;
             Wallet = wallet;
@@ -129,7 +139,7 @@ namespace Nethermind.DataMarketplace.Subprotocols
                     message => Handle(Deserialize<DataStreamEnabledMessage>(message.Data)),
                 [NdmMessageCode.DataStreamDisabled] =
                     message => Handle(Deserialize<DataStreamDisabledMessage>(message.Data)),
-                [NdmMessageCode.DataUnavailable] =
+                [NdmMessageCode.DataAvailability] =
                     message => Handle(Deserialize<DataAvailabilityMessage>(message.Data)),
                 [NdmMessageCode.RequestDataDeliveryReceipt] = message =>
                     Handle(Deserialize<RequestDataDeliveryReceiptMessage>(message.Data)),
@@ -147,7 +157,7 @@ namespace Nethermind.DataMarketplace.Subprotocols
                 [NdmMessageCode.GraceUnitsExceeded] = message => Handle(Deserialize<GraceUnitsExceededMessage>(message.Data))
             };
 
-        public void Init()
+        public override void Init()
         {
             try
             {
@@ -183,7 +193,7 @@ namespace Nethermind.DataMarketplace.Subprotocols
             }
         }
         
-        public void HandleMessage(Packet message)
+        public override void HandleMessage(Packet message)
         {
             if (Logger.IsTrace) Logger.Trace($"{Session.RemoteNodeId} {nameof(NdmSubprotocol)} handling a message with code {message.PacketType}.");
 
@@ -284,7 +294,7 @@ namespace Nethermind.DataMarketplace.Subprotocols
             });
         }
 
-        public virtual void InitiateDisconnect(DisconnectReason disconnectReason, string details)
+        public override void InitiateDisconnect(DisconnectReason disconnectReason, string details)
         {
             if (Interlocked.Exchange(ref DisconnectedValue, 1) == 1)
             {
@@ -501,7 +511,7 @@ namespace Nethermind.DataMarketplace.Subprotocols
                 });
         }
 
-        public async Task<IReadOnlyList<DepositApproval>> SendGetDepositApprovals(Keccak dataAssetId = null,
+        public async Task<IReadOnlyList<DepositApproval>> SendGetDepositApprovals(Keccak? dataAssetId = null,
             bool onlyPending = false, CancellationToken? token = null)
         {
             if (Logger.IsTrace) Logger.Trace($"{Session.RemoteNodeId} NDM sending: getdepositapprovals");
@@ -582,6 +592,7 @@ namespace Nethermind.DataMarketplace.Subprotocols
         private void Handle(DataAssetDataMessage message)
         {
             if (Logger.IsTrace) Logger.Trace($"{Session.RemoteNodeId} NDM received: dataassetdata");
+            Metrics.ReceivedData++;
             ConsumerService.SetUnitsAsync(message.DepositId, message.ConsumedUnits).ContinueWith(t =>
             {
                 if (t.IsFaulted && Logger.IsError)
@@ -673,7 +684,7 @@ namespace Nethermind.DataMarketplace.Subprotocols
             Send(new DataDeliveryReceiptMessage(depositId, receipt));
         }
 
-        public virtual void Dispose()
+        public override void Dispose()
         {
             if (Interlocked.Exchange(ref DisposedValue, 1) == 1)
             {

@@ -1,20 +1,18 @@
-﻿/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+﻿//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Collections.Concurrent;
@@ -22,6 +20,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using DotNetty.Transport.Channels;
+using Nethermind.Core;
 using Nethermind.Core.Crypto;
 using Nethermind.Core.Extensions;
 using Nethermind.Logging;
@@ -102,7 +101,8 @@ namespace Nethermind.Network.P2P
 
                 return _node;
             }
-            set => _node = value;
+            
+            private set => _node = value;
         }
 
         public void EnableSnappy()
@@ -132,7 +132,7 @@ namespace Nethermind.Network.P2P
 
         public void AddSupportedCapability(Capability capability)
         {
-            if (!_protocols.TryGetValue(Protocol.P2P, out var protocol))
+            if (!_protocols.TryGetValue(Protocol.P2P, out IProtocolHandler protocol))
             {
                 return;
             }
@@ -141,10 +141,10 @@ namespace Nethermind.Network.P2P
         }
 
         public bool HasAvailableCapability(Capability capability)
-            => _protocols.TryGetValue(Protocol.P2P, out var protocol) && protocol.HasAvailableCapability(capability);
+            => _protocols.TryGetValue(Protocol.P2P, out IProtocolHandler protocol) && protocol.HasAvailableCapability(capability);
 
         public bool HasAgreedCapability(Capability capability)
-            => _protocols.TryGetValue(Protocol.P2P, out var protocol) && protocol.HasAgreedCapability(capability);
+            => _protocols.TryGetValue(Protocol.P2P, out IProtocolHandler protocol) && protocol.HasAgreedCapability(capability);
 
         public IPingSender PingSender { get; set; }
 
@@ -264,7 +264,7 @@ namespace Nethermind.Network.P2P
                 _packetSender = packetSender;
                 State = SessionState.Initialized;
             }
-
+            
             Initialized?.Invoke(this, EventArgs.Empty);
         }
 
@@ -322,7 +322,7 @@ namespace Nethermind.Network.P2P
             //Trigger disconnect on each protocol handler (if p2p is initialized it will send disconnect message to the peer)
             if (_protocols.Any())
             {
-                foreach (var protocolHandler in _protocols.Values)
+                foreach (IProtocolHandler protocolHandler in _protocols.Values)
                 {
                     try
                     {
@@ -336,7 +336,7 @@ namespace Nethermind.Network.P2P
                 }
             }
 
-            Disconnect(disconnectReason, DisconnectType.Local, details);
+            MarkDisconnected(disconnectReason, DisconnectType.Local, details);
         }
 
         private object _sessionStateLock = new object();
@@ -356,10 +356,8 @@ namespace Nethermind.Network.P2P
 
         public SessionState BestStateReached { get; private set; }
 
-        public void Disconnect(DisconnectReason disconnectReason, DisconnectType disconnectType, string details)
+        public void MarkDisconnected(DisconnectReason disconnectReason, DisconnectType disconnectType, string details)
         {
-            if (_logger.IsTrace) _logger.Trace($"|NetworkTrace| {this} disconnect call {disconnectReason} {disconnectType}");
-
             lock (_sessionStateLock)
             {
                 if (State >= SessionState.Disconnecting)
@@ -372,6 +370,8 @@ namespace Nethermind.Network.P2P
             }
 
             UpdateMetric(disconnectType, disconnectReason);
+            if (_logger.IsTrace) _logger.Trace($"|NetworkTrace| {this} disconnect call {disconnectReason} {disconnectType}");
+            if(NetworkDiagTracer.IsEnabled) NetworkDiagTracer.ReportDisconnect(Node.Host, $"{disconnectType} {disconnectReason} {details}");
 
             if (_logger.IsTrace) _logger.Trace($"|NetworkTrace| {this} invoking 'Disconnecting' event {disconnectReason} {disconnectType}");
             Disconnecting?.Invoke(this, new DisconnectEventArgs(disconnectReason, disconnectType, details));
@@ -387,7 +387,7 @@ namespace Nethermind.Network.P2P
             }
             else
             {
-                var delayTask = disconnectType == DisconnectType.Local ? Task.Delay(Timeouts.Disconnection) : Task.CompletedTask;
+                Task delayTask = disconnectType == DisconnectType.Local ? Task.Delay(Timeouts.Disconnection) : Task.CompletedTask;
                 delayTask.ContinueWith(t =>
                 {
                     if (_logger.IsTrace) _logger.Trace($"{this} disconnecting now after {Timeouts.Disconnection.TotalMilliseconds} milliseconds");

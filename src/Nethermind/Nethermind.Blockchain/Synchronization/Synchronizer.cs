@@ -1,20 +1,18 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Linq;
@@ -25,13 +23,12 @@ using Nethermind.Blockchain.Receipts;
 using Nethermind.Blockchain.Synchronization.FastBlocks;
 using Nethermind.Blockchain.Synchronization.FastSync;
 using Nethermind.Blockchain.Validators;
+using Nethermind.Consensus;
 using Nethermind.Core;
-using Nethermind.Core.Crypto;
-using Nethermind.Core.Json;
 using Nethermind.Core.Specs;
 using Nethermind.Dirichlet.Numerics;
 using Nethermind.Logging;
-using Nethermind.Mining;
+using Nethermind.Stats;
 using Nethermind.Stats.Model;
 
 namespace Nethermind.Blockchain.Synchronization
@@ -39,7 +36,7 @@ namespace Nethermind.Blockchain.Synchronization
     public class Synchronizer : ISynchronizer
     {
         private const int _syncTimerInterval = 1000;
-        
+
         private readonly ILogger _logger;
         private readonly ISpecProvider _specProvider;
         private readonly IBlockTree _blockTree;
@@ -47,17 +44,18 @@ namespace Nethermind.Blockchain.Synchronization
         private readonly ISyncConfig _syncConfig;
         private readonly IEthSyncPeerPool _syncPeerPool;
         private readonly INodeDataDownloader _nodeDataDownloader;
+        private readonly INodeStatsManager _nodeStatsManager;
         private readonly ISyncReport _syncReport;
 
         private readonly BlockDownloader _blockDownloader;
         private readonly FastBlocksDownloader _fastBlockDownloader;
-        
+
         private ManualResetEventSlim _syncRequested = new ManualResetEventSlim(false);
         private CancellationTokenSource _syncLoopCancellation = new CancellationTokenSource();
         private CancellationTokenSource _peerSyncCancellation;
         private SyncPeerAllocation _blocksSyncAllocation;
         private System.Timers.Timer _syncTimer;
-        private SyncModeSelector _syncMode;
+        private ISyncModeSelector _syncMode;
         private bool _cancelDueToBetterPeer;
         private Task _syncLoopTask;
 
@@ -73,7 +71,7 @@ namespace Nethermind.Blockchain.Synchronization
             IEthSyncPeerPool peerPool,
             ISyncConfig syncConfig,
             INodeDataDownloader nodeDataDownloader,
-            ISyncReport syncReport,
+            INodeStatsManager nodeStatsManager,
             ILogManager logManager)
         {
             _logger = logManager?.GetClassLogger() ?? throw new ArgumentNullException(nameof(logManager));
@@ -83,26 +81,31 @@ namespace Nethermind.Blockchain.Synchronization
             _syncConfig = syncConfig ?? throw new ArgumentNullException(nameof(syncConfig));
             _syncPeerPool = peerPool ?? throw new ArgumentNullException(nameof(peerPool));
             _nodeDataDownloader = nodeDataDownloader ?? throw new ArgumentNullException(nameof(nodeDataDownloader));
-            _syncReport = syncReport ?? throw new ArgumentNullException(nameof(syncReport));
+            _nodeStatsManager = nodeStatsManager ?? throw new ArgumentNullException(nameof(nodeStatsManager));
 
             SyncProgressResolver syncProgressResolver = new SyncProgressResolver(_blockTree, receiptStorage, _nodeDataDownloader, syncConfig, logManager);
             _syncMode = new SyncModeSelector(syncProgressResolver, _syncPeerPool, _syncConfig, logManager);
-
-            _blockDownloader = new BlockDownloader(_blockTree, blockValidator, sealValidator, syncReport, logManager);
-
+            _syncReport = new SyncReport(_syncPeerPool, _nodeStatsManager, syncConfig, syncProgressResolver, _syncMode, logManager);
+            _blockDownloader = new BlockDownloader(_blockTree, blockValidator, sealValidator, _syncReport, receiptStorage, specProvider, logManager);
             if (syncConfig.FastBlocks)
             {
                 FastBlocksFeed feed = new FastBlocksFeed(_specProvider, _blockTree, _receiptStorage, _syncPeerPool, syncConfig, _syncReport, logManager);
                 _fastBlockDownloader = new FastBlocksDownloader(_syncPeerPool, feed, blockValidator, sealValidator, logManager);
             }
+
+            _syncPeerPool.PeerAdded += (sender, args) => RequestSynchronization(SyncTriggerType.PeerAdded);
         }
 
         public SyncMode SyncMode => _syncMode.Current;
+        
+        public event EventHandler<SyncModeChangedEventArgs> SyncModeChanged
+        {
+            add => _syncMode.Changed += value;
+            remove => _syncMode.Changed -= value;
+        }
 
         public void Start()
         {
-            AllocateBlocksSync();
-
             // Task.Run may cause trouble - make sure to test it well if planning to uncomment 
             // _syncLoopTask = Task.Run(RunSyncLoop, _syncLoopCancelTokenSource.Token) 
             _syncLoopTask = Task.Factory.StartNew(
@@ -114,13 +117,13 @@ namespace Nethermind.Blockchain.Synchronization
                 {
                     switch (task)
                     {
-                        case Task t when t.IsFaulted:
+                        case { } t when t.IsFaulted:
                             if (_logger.IsError) _logger.Error("Sync loop encountered an exception.", t.Exception);
                             break;
-                        case Task t when t.IsCanceled:
+                        case { } t when t.IsCanceled:
                             if (_logger.IsInfo) _logger.Info("Sync loop canceled.");
                             break;
-                        case Task t when t.IsCompletedSuccessfully:
+                        case { } t when t.IsCompletedSuccessfully:
                             if (_logger.IsInfo) _logger.Info("Sync loop completed successfully.");
                             break;
                         default:
@@ -211,6 +214,11 @@ namespace Nethermind.Blockchain.Synchronization
             }
         }
 
+        private static bool RequiresBlocksSyncAllocation(SyncMode syncMode)
+        {
+            return syncMode == SyncMode.Beam || syncMode == SyncMode.Full || syncMode == SyncMode.FastSync;
+        }
+
         private async Task RunSyncLoop()
         {
             while (true)
@@ -218,6 +226,7 @@ namespace Nethermind.Blockchain.Synchronization
                 if (_logger.IsTrace) _logger.Trace("Sync loop - WAIT.");
                 _syncRequested.Wait(_syncLoopCancellation.Token);
                 _syncRequested.Reset();
+                FreeBlocksSyncAllocation();
 
                 if (_logger.IsTrace) _logger.Trace("Sync loop - IN.");
                 if (_syncLoopCancellation.IsCancellationRequested)
@@ -230,29 +239,20 @@ namespace Nethermind.Blockchain.Synchronization
 
                 _syncMode.Update();
                 _syncReport.CurrentSyncMode = _syncMode.Current;
-                
-                if (_blocksSyncAllocation == null)
+
+                if (RequiresBlocksSyncAllocation(_syncMode.Current))
                 {
-                    AllocateBlocksSync();
-                    if (_syncMode.Current == SyncMode.Headers)
+                    if (_blocksSyncAllocation == null)
                     {
-                        _blocksSyncAllocation.MinBlocksAhead = SyncModeSelector.FullSyncThreshold;
+                        long? minBlocksAhead = _syncMode.Current == SyncMode.FastSync ? SyncModeSelector.FullSyncThreshold : (long?)null; 
+                        await AllocateBlocksSync(minBlocksAhead);
                     }
-                    else
-                    {
-                        _blocksSyncAllocation.MinBlocksAhead = null;
-                    }
-                }
-                else if (_syncMode.IsParallel)
-                {
-                    FreeBlocksSyncAllocation();
                 }
 
                 PeerInfo bestPeer = null;
                 if (_blocksSyncAllocation != null)
                 {
                     UInt256 ourTotalDifficulty = _blockTree.BestSuggestedHeader?.TotalDifficulty ?? 0;
-                    _syncPeerPool.EnsureBest(); // can we remove it yet?
                     bestPeer = _blocksSyncAllocation?.Current;
                     if (bestPeer == null || bestPeer.TotalDifficulty <= ourTotalDifficulty)
                     {
@@ -265,60 +265,75 @@ namespace Nethermind.Blockchain.Synchronization
                 }
 
                 _peerSyncCancellation = new CancellationTokenSource();
-                var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(_peerSyncCancellation.Token, _syncLoopCancellation.Token);
-                Task<long> syncProgressTask;
-                switch (_syncMode.Current)
+                using (CancellationTokenSource linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(_peerSyncCancellation.Token, _syncLoopCancellation.Token))
                 {
-                    case SyncMode.FastBlocks:
-                        syncProgressTask = _fastBlockDownloader.Sync(linkedCancellation.Token);
-                        break;
-                    case SyncMode.Headers:
-                        syncProgressTask = _syncConfig.DownloadBodiesInFastSync
-                            ? _blockDownloader.DownloadBlocks(bestPeer, SyncModeSelector.FullSyncThreshold, linkedCancellation.Token, false)
-                            : _blockDownloader.DownloadHeaders(bestPeer, SyncModeSelector.FullSyncThreshold, linkedCancellation.Token);
-                        break;
-                    case SyncMode.StateNodes:
-                        syncProgressTask = DownloadStateNodes(_syncLoopCancellation.Token);
-                        break;
-                    case SyncMode.WaitForProcessor:
-                        syncProgressTask = Task.Delay(5000).ContinueWith(_ => 0L);
-                        break;
-                    case SyncMode.Full:
-                        syncProgressTask = _blockDownloader.DownloadBlocks(bestPeer, 0, linkedCancellation.Token);
-                        break;
-                    case SyncMode.NotStarted:
-                        syncProgressTask = Task.Delay(1000).ContinueWith(_ => 0L);
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-                switch (_syncMode.Current)
-                {
-                    case SyncMode.WaitForProcessor:
-                        if (_logger.IsInfo) _logger.Info("Waiting for the block processor to catch up before the next sync round...");
-                        await syncProgressTask;
-                        break;
-                    case SyncMode.NotStarted:
-                        if (_logger.IsInfo) _logger.Info("Waiting for peers to connect before selecting the sync mode...");
-                        await syncProgressTask;
-                        break;
-                    default:
-                        await syncProgressTask.ContinueWith(t => HandleSyncRequestResult(t, bestPeer));
-                        break;
-                }
-                
-                if (syncProgressTask.IsCompletedSuccessfully)
-                {
-                    long progress = syncProgressTask.Result;
-                    if (progress == 0 && _blocksSyncAllocation != null)
+                    Task<long> syncProgressTask;
+                    BlockDownloaderOptions options = BlockDownloaderOptions.None;
+                    if (_syncConfig.DownloadReceiptsInFastSync)
                     {
-                        _syncPeerPool.ReportNoSyncProgress(_blocksSyncAllocation); // not very fair here - allocation may have changed
+                        options |= BlockDownloaderOptions.DownloadReceipts;
                     }
+
+                    switch (_syncMode.Current)
+                    {
+                        case SyncMode.FastBlocks:
+                            syncProgressTask = _fastBlockDownloader.Sync(linkedCancellation.Token);
+                            break;
+                        case SyncMode.FastSync:
+                            options |= BlockDownloaderOptions.MoveToMain;
+                            syncProgressTask = _syncConfig.DownloadBodiesInFastSync
+                                ? _blockDownloader.DownloadBlocks(bestPeer, SyncModeSelector.FullSyncThreshold, linkedCancellation.Token, options)
+                                : _blockDownloader.DownloadHeaders(bestPeer, SyncModeSelector.FullSyncThreshold, linkedCancellation.Token);
+                            break;
+                        case SyncMode.StateNodes:
+                            syncProgressTask = DownloadStateNodes(_syncLoopCancellation.Token);
+                            break;
+                        case SyncMode.WaitForProcessor:
+                            syncProgressTask = Task.Delay(5000).ContinueWith(_ => 0L);
+                            break;
+                        case SyncMode.Full:
+                            syncProgressTask = _blockDownloader.DownloadBlocks(bestPeer, 0, linkedCancellation.Token);
+                            break;
+                        case SyncMode.Beam:
+                            options |= BlockDownloaderOptions.MoveToMain;
+                            syncProgressTask = _syncConfig.DownloadBodiesInFastSync
+                                ? _blockDownloader.DownloadBlocks(bestPeer, 0, linkedCancellation.Token, options)
+                                : _blockDownloader.DownloadHeaders(bestPeer, 0, linkedCancellation.Token);
+                            break;
+                        case SyncMode.NotStarted:
+                            syncProgressTask = Task.Delay(1000).ContinueWith(_ => 0L);
+                            break;
+                        default:
+                            throw new ArgumentOutOfRangeException();
+                    }
+
+                    switch (_syncMode.Current)
+                    {
+                        case SyncMode.WaitForProcessor:
+                            if (_logger.IsInfo) _logger.Info("Waiting for the block processor to catch up before the next sync round...");
+                            await syncProgressTask;
+                            break;
+                        case SyncMode.NotStarted:
+                            if (_logger.IsInfo) _logger.Info("Waiting for peers to connect before selecting the sync mode...");
+                            await syncProgressTask;
+                            break;
+                        default:
+                            await syncProgressTask.ContinueWith(t => HandleSyncRequestResult(t, bestPeer));
+                            break;
+                    }
+
+                    if (syncProgressTask.IsCompletedSuccessfully)
+                    {
+                        long progress = syncProgressTask.Result;
+                        if (progress == 0 && _blocksSyncAllocation != null)
+                        {
+                            _syncPeerPool.ReportNoSyncProgress(_blocksSyncAllocation); // not very fair here - allocation may have changed
+                        }
+                    }
+
+                    FreeBlocksSyncAllocation();
                 }
 
-                _blocksSyncAllocation?.FinishSync();
-                linkedCancellation.Dispose();
                 var source = _peerSyncCancellation;
                 _peerSyncCancellation = null;
                 source?.Dispose();
@@ -329,7 +344,7 @@ namespace Nethermind.Blockchain.Synchronization
         {
             switch (task)
             {
-                case Task<long> t when t.IsFaulted:
+                case { } t when t.IsFaulted:
                     string reason;
                     if (t.Exception != null && t.Exception.InnerExceptions.Any(x => x is TimeoutException))
                     {
@@ -349,7 +364,7 @@ namespace Nethermind.Blockchain.Synchronization
                     }
 
                     break;
-                case Task<long> t when t.IsCanceled:
+                case { } t when t.IsCanceled:
                     if (_cancelDueToBetterPeer)
                     {
                         _cancelDueToBetterPeer = false;
@@ -364,7 +379,7 @@ namespace Nethermind.Blockchain.Synchronization
                     }
 
                     break;
-                case Task<long> t when t.IsCompletedSuccessfully:
+                case { } t when t.IsCompletedSuccessfully:
                     if (_logger.IsDebug) _logger.Debug($"{_syncMode.Current} sync with {peerInfo} completed with progress {t.Result}.");
                     if (peerInfo != null) // fix this for node data sync
                     {
@@ -375,12 +390,12 @@ namespace Nethermind.Blockchain.Synchronization
             }
         }
 
-        private void AllocateBlocksSync()
+        private async Task AllocateBlocksSync(long? minBlocksAhead)
         {
             if (_blocksSyncAllocation == null)
             {
                 if (_logger.IsDebug) _logger.Debug("Allocating block sync.");
-                _blocksSyncAllocation = _syncPeerPool.Borrow("synchronizer");
+                _blocksSyncAllocation = await _syncPeerPool.BorrowAsync(new BlocksSyncPeerSelectionStrategy(minBlocksAhead, _logger));
                 _blocksSyncAllocation.Replaced += AllocationOnReplaced;
                 _blocksSyncAllocation.Cancelled += AllocationOnCancelled;
                 _blocksSyncAllocation.Refreshed += AllocationOnRefreshed;
@@ -444,6 +459,7 @@ namespace Nethermind.Blockchain.Synchronization
             _syncLoopCancellation?.Dispose();
             _peerSyncCancellation?.Dispose();
             _syncRequested?.Dispose();
+            _syncReport?.Dispose();
         }
 
         private void FreeBlocksSyncAllocation()

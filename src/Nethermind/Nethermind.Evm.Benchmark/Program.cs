@@ -14,7 +14,9 @@
 //  You should have received a copy of the GNU Lesser General Public License
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
+using System.Linq;
 using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Environments;
 using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Running;
 
@@ -24,10 +26,13 @@ namespace Nethermind.Evm.Benchmark
     {
         static void Main(string[] args)
         {
-            BenchmarkRunner.Run<EvmBenchmarks>(
-                DefaultConfig.Instance.With(
-                    Job.Core.With(
-                        new[] {new EnvironmentVariable("NETH.BENCHMARK.BYTECODE", args[0])})));
+            // BenchmarkRunner.Run<EvmBenchmarks>(
+            //     DefaultConfig.Instance.With(
+            //         Job.Default.With(CoreRuntime.Core30).With(
+            //             new[] {new EnvironmentVariable("NETH.BENCHMARK.BYTECODE", args.Any() ? args[0] : "0x")})));
+            // BenchmarkRunner.Run<EvmPushUIntBenchmarks>();
+            // BenchmarkRunner.Run<EvmPopIntBenchmarks>();
+            // BenchmarkRunner.Run<EvmPushSignedIntBenchmarks>();
         }
     }
 }

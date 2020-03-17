@@ -1,33 +1,28 @@
-﻿/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+﻿//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System.IO;
 using System.Linq;
 using System.Security;
-using Nethermind.Config;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
-using Nethermind.Core.Extensions;
-using Nethermind.Core.Json;
-using Nethermind.Core.Model;
-using Nethermind.Core.Test.Builders;
+using Nethermind.Crypto;
 using Nethermind.KeyStore.Config;
 using Nethermind.Logging;
+using Nethermind.Serialization.Json;
 using Newtonsoft.Json;
 using NUnit.Framework;
 
@@ -53,7 +48,7 @@ namespace Nethermind.KeyStore.Test
                 Directory.CreateDirectory(_keyStoreDir);
             }
 
-            ILogManager logManager = NullLogManager.Instance;
+            ILogManager logManager = LimboLogs.Instance;
             _serializer = new EthereumJsonSerializer();
             _cryptoRandom = new CryptoRandom();
             _store = new FileKeyStore(_config, _serializer, new AesEncrypter(_config, logManager), _cryptoRandom, logManager);
@@ -89,6 +84,13 @@ namespace Nethermind.KeyStore.Test
             var testModel = _testsModel.EvilNonce;
             RunTest(testModel);
         }
+        
+        [Test]
+        public void MyCryptoTest()
+        {
+            var testModel = _testsModel.MyCrypto;
+            RunTest(testModel);
+        }
 
         private void RunTest(KeyStoreTestModel testModel)
         {
@@ -119,6 +121,7 @@ namespace Nethermind.KeyStore.Test
             public KeyStoreTestModel Test2 { get; set; }
             public KeyStoreTestModel Python_generated_test_with_odd_iv { get; set; }
             public KeyStoreTestModel EvilNonce { get; set; }
+            public KeyStoreTestModel MyCrypto { get; set; }
             
             public KeyStoreTestModel Sealer0 { get; set; }
         }

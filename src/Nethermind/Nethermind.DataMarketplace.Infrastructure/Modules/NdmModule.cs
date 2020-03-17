@@ -1,37 +1,31 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
-using System.Linq;
-using System.Net.Http;
-using System.Security;
+using System.IO;
 using Nethermind.Abi;
 using Nethermind.Blockchain;
-using Nethermind.Blockchain.Filters;
+using Nethermind.Blockchain.Receipts;
 using Nethermind.Core;
 using Nethermind.DataMarketplace.Channels;
 using Nethermind.DataMarketplace.Core.Services;
 using Nethermind.DataMarketplace.Infrastructure.Rlp;
-using Nethermind.Evm;
+using Nethermind.Db;
 using Nethermind.Facade;
-using Nethermind.Facade.Proxy;
-using Nethermind.Logging;
+using Nethermind.JsonRpc;
 using Nethermind.Store;
-using Nethermind.Wallet;
 
 namespace Nethermind.DataMarketplace.Infrastructure.Modules
 {
@@ -41,23 +35,23 @@ namespace Nethermind.DataMarketplace.Infrastructure.Modules
         {
             AddDecoders();
             var config = services.NdmConfig;
-            var providerAddress = string.IsNullOrWhiteSpace(config.ProviderAddress)
-                ? Address.Zero
-                : new Address(config.ProviderAddress);
             var consumerAddress = string.IsNullOrWhiteSpace(config.ConsumerAddress)
                 ? Address.Zero
                 : new Address(config.ConsumerAddress);
             var contractAddress = string.IsNullOrWhiteSpace(config.ContractAddress)
                 ? Address.Zero
                 : new Address(config.ContractAddress);
-            UnlockHardcodedAccounts(providerAddress, consumerAddress, services.Wallet);
 
+            var configId = config.Id;
+            var configManager = services.ConfigManager;
             var logManager = services.LogManager;
-            var jsonSerializer = services.JsonSerializer;
+            var timestamper = services.Timestamper;
+            var wallet = services.Wallet;
             var readOnlyTree = new ReadOnlyBlockTree(services.BlockTree);
             var readOnlyDbProvider = new ReadOnlyDbProvider(services.RocksProvider, false);
             var readOnlyTxProcessingEnv = new ReadOnlyTxProcessingEnv(readOnlyDbProvider, readOnlyTree,
                 services.SpecProvider, logManager);
+            var jsonRpcConfig = services.ConfigProvider.GetConfig<IJsonRpcConfig>();
             var blockchainBridge = new BlockchainBridge(
                 readOnlyTxProcessingEnv.StateReader,
                 readOnlyTxProcessingEnv.StateProvider,
@@ -67,36 +61,48 @@ namespace Nethermind.DataMarketplace.Infrastructure.Modules
                 services.ReceiptStorage,
                 services.FilterStore,
                 services.FilterManager,
-                services.Wallet,
+                wallet,
                 readOnlyTxProcessingEnv.TransactionProcessor,
-                services.Ecdsa);
+                services.Ecdsa,
+                services.BloomStorage,
+                new ReceiptsRecovery(),
+                logManager,
+                jsonRpcConfig.FindLogBlockDepthLimit);
             var dataAssetRlpDecoder = new DataAssetDecoder();
             var encoder = new AbiEncoder();
 
-            IEthJsonRpcClientProxy ethJsonRpcClientProxy = null;
             INdmBlockchainBridge ndmBlockchainBridge;
             if (config.ProxyEnabled)
             {
-                ethJsonRpcClientProxy = new EthJsonRpcClientProxy(new JsonRpcClientProxy(
-                    new DefaultHttpClient(new HttpClient(), jsonSerializer, logManager),
-                    config.JsonRpcUrlProxies));
-                ndmBlockchainBridge = new NdmBlockchainBridgeProxy(ethJsonRpcClientProxy);
+                if (config.JsonRpcUrlProxies == null || services.EthJsonRpcClientProxy == null)
+                {
+                    throw new InvalidDataException("JSON RPC proxy is enabled but the proxies were not initialized properly.");
+                }
+                
+                services.JsonRpcClientProxy!.SetUrls(config.JsonRpcUrlProxies!);
+                ndmBlockchainBridge = new NdmBlockchainBridgeProxy(services.EthJsonRpcClientProxy);
             }
             else
             {
                 ndmBlockchainBridge = new NdmBlockchainBridge(blockchainBridge, services.TransactionPool);
             }
-            
-            var depositService = new DepositService(ndmBlockchainBridge, services.TransactionPool, encoder,
-                services.Wallet, contractAddress, logManager);
+
+            var gasPriceService = new GasPriceService(services.HttpClient, configManager, configId, timestamper,
+                logManager);
+            var transactionService = new TransactionService(ndmBlockchainBridge, wallet, configManager, configId,
+                logManager);
+            var depositService = new DepositService(ndmBlockchainBridge, encoder, wallet, contractAddress);
             var ndmConsumerChannelManager = services.NdmConsumerChannelManager;
             var ndmDataPublisher = services.NdmDataPublisher;
-            var jsonRpcNdmConsumerChannel = new JsonRpcNdmConsumerChannel();
-//            ndmConsumerChannelManager.Add(jsonRpcNdmConsumerChannel);
+            var jsonRpcNdmConsumerChannel = new JsonRpcNdmConsumerChannel(logManager);
+            if (config.JsonRpcDataChannelEnabled)
+            {
+                ndmConsumerChannelManager.Add(jsonRpcNdmConsumerChannel);
+            }
 
             return new Services(services, new NdmCreatedServices(consumerAddress, encoder, dataAssetRlpDecoder,
-                depositService, ndmDataPublisher, jsonRpcNdmConsumerChannel, ndmConsumerChannelManager,
-                ndmBlockchainBridge, ethJsonRpcClientProxy));
+                depositService, gasPriceService, transactionService, ndmDataPublisher, jsonRpcNdmConsumerChannel,
+                ndmConsumerChannelManager, ndmBlockchainBridge));
         }
 
         private static void AddDecoders()
@@ -117,22 +123,10 @@ namespace Nethermind.DataMarketplace.Infrastructure.Modules
             FaucetResponseDecoder.Init();
             FaucetRequestDetailsDecoder.Init();
             SessionDecoder.Init();
+            TransactionInfoDecoder.Init();
             UnitsRangeDecoder.Init();
         }
 
-        private static void UnlockHardcodedAccounts(Address providerAddress, Address consumerAddress, IWallet wallet)
-        {
-            // hardcoded passwords
-            var consumerPassphrase = new SecureString();
-            foreach (var c in "ndmConsumer")
-            {
-                consumerPassphrase.AppendChar(c);
-            }
-
-            consumerPassphrase.MakeReadOnly();
-            wallet.UnlockAccount(consumerAddress, consumerPassphrase);
-        }
-        
         private class Services : INdmServices
         {
             public NdmRequiredServices RequiredServices { get; }

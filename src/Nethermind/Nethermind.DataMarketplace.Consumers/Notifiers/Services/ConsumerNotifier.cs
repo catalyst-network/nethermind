@@ -1,26 +1,25 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System.Threading.Tasks;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
 using Nethermind.DataMarketplace.Core.Domain;
 using Nethermind.DataMarketplace.Core.Services;
+using Nethermind.DataMarketplace.Core.Services.Models;
 
 namespace Nethermind.DataMarketplace.Consumers.Notifiers.Services
 {
@@ -92,6 +91,12 @@ namespace Nethermind.DataMarketplace.Consumers.Notifiers.Services
                     address
                 }));
 
+        public Task SendConsumerAccountUnlockedAsync(Address address)
+            => _notifier.NotifyAsync(new Notification("consumer_account_unlocked",
+                new
+                {
+                    address
+                }));
         public Task SendConsumerAddressChangedAsync(Address newAddress, Address previousAddress)
             => _notifier.NotifyAsync(new Notification("consumer_address_changed",
                 new
@@ -176,7 +181,7 @@ namespace Nethermind.DataMarketplace.Consumers.Notifiers.Services
                     dataAssetName,
                     transactionHash
                 }));
-        
+
         public Task SendClaimedRefundAsync(Keccak depositId, string dataAssetName, Keccak transactionHash)
             => _notifier.NotifyAsync(new Notification("claimed_refund",
                 new
@@ -203,6 +208,47 @@ namespace Nethermind.DataMarketplace.Consumers.Notifiers.Services
                     consumedUnitsFromProvider,
                     consumedUnits,
                     graceUnits
+                }));
+
+        public Task SendEthUsdPriceAsync(decimal price, ulong updatedAt)
+            => _notifier.NotifyAsync(new Notification("eth_usd_price",
+                new
+                {
+                    price,
+                    updatedAt
+                }));
+
+        public Task SendGasPriceAsync(GasPriceTypes types)
+            => _notifier.NotifyAsync(new Notification("gas_price",
+                new
+                {
+                    safeLow = new
+                    {
+                        price = types.SafeLow.Price,
+                        waitTime = types.SafeLow.WaitTime
+                    },
+                    average = new
+                    {
+                        price = types.Average.Price,
+                        waitTime = types.Average.WaitTime
+                    },
+                    fast = new
+                    {
+                        price = types.Fast.Price,
+                        waitTime = types.Fast.WaitTime
+                    },
+                    fastest = new
+                    {
+                        price = types.Fastest.Price,
+                        waitTime = types.Fastest.WaitTime
+                    },
+                    custom = new
+                    {
+                        price = types.Custom.Price,
+                        waitTime = types.Custom.WaitTime
+                    },
+                    type = types.Type,
+                    updatedAt = types.UpdatedAt
                 }));
     }
 }

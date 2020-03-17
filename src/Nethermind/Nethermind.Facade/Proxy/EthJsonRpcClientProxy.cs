@@ -7,7 +7,7 @@
 //  (at your option) any later version.
 // 
 //  The Nethermind library is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; witrhout even the implied warranty of
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
 //  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 //  GNU Lesser General Public License for more details.
 // 
@@ -56,6 +56,9 @@ namespace Nethermind.Facade.Proxy
 
         public Task<RpcResult<TransactionModel>> eth_getTransactionByHash(Keccak transactionHash)
             => _proxy.SendAsync<TransactionModel>(nameof(eth_getTransactionByHash), transactionHash);
+        
+        public Task<RpcResult<TransactionModel[]>> eth_pendingTransactions()
+            => _proxy.SendAsync<TransactionModel[]>(nameof(eth_pendingTransactions));
 
         public Task<RpcResult<Keccak>> eth_sendRawTransaction(byte[] transaction)
             => _proxy.SendAsync<Keccak>(nameof(eth_sendRawTransaction), transaction);

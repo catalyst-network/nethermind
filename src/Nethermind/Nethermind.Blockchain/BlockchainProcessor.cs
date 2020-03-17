@@ -1,28 +1,28 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Nethermind.Blockchain.Find;
 using Nethermind.Blockchain.Validators;
 using Nethermind.Core;
+using Nethermind.Core.Attributes;
 using Nethermind.Core.Crypto;
 using Nethermind.Dirichlet.Numerics;
 using Nethermind.Evm.Tracing;
@@ -30,12 +30,11 @@ using Nethermind.Logging;
 
 namespace Nethermind.Blockchain
 {
-    public class BlockchainProcessor : IBlockchainProcessor
+    public class BlockchainProcessor : IBlockchainProcessor, IBlockProcessingQueue
     {
         private readonly IBlockProcessor _blockProcessor;
         private readonly IBlockDataRecoveryStep _recoveryStep;
         private readonly bool _storeReceiptsByDefault;
-        private readonly bool _storeTracesByDefault;
         private readonly IBlockTree _blockTree;
         private readonly ILogger _logger;
 
@@ -51,23 +50,34 @@ namespace Nethermind.Blockchain
         public int SoftMaxRecoveryQueueSizeInTx = 10000; // adjust based on tx or gas
         private const int MaxProcessingQueueSize = 2000; // adjust based on tx or gas
 
-        [Todo(Improve.Refactor, "Store receipts by default should be configurable")]
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="blockTree"></param>
+        /// <param name="blockProcessor"></param>
+        /// <param name="recoveryStep"></param>
+        /// <param name="logManager"></param>
+        /// <param name="storeReceiptsByDefault"></param>
+        /// <param name="autoProcess">Registers for OnNewHeadBlock events at block tree.</param>
         public BlockchainProcessor(
             IBlockTree blockTree,
             IBlockProcessor blockProcessor,
             IBlockDataRecoveryStep recoveryStep,
             ILogManager logManager,
             bool storeReceiptsByDefault,
-            bool storeTracesByDefault)
+            bool autoProcess = true)
         {
             _logger = logManager?.GetClassLogger() ?? throw new ArgumentNullException(nameof(logManager));
             _blockTree = blockTree ?? throw new ArgumentNullException(nameof(blockTree));
             _blockProcessor = blockProcessor ?? throw new ArgumentNullException(nameof(blockProcessor));
             _recoveryStep = recoveryStep ?? throw new ArgumentNullException(nameof(recoveryStep));
             _storeReceiptsByDefault = storeReceiptsByDefault;
-            _storeTracesByDefault = storeTracesByDefault;
 
-            _blockTree.NewBestSuggestedBlock += OnNewBestBlock;
+            if (autoProcess)
+            {
+                _blockTree.NewBestSuggestedBlock += OnNewBestBlock;
+            }
+
             _stats = new ProcessingStats(_logger);
         }
 
@@ -79,15 +89,10 @@ namespace Nethermind.Blockchain
                 options |= ProcessingOptions.StoreReceipts;
             }
 
-            if (_storeTracesByDefault)
-            {
-                options |= ProcessingOptions.StoreTraces;
-            }
-
-            SuggestBlock(blockEventArgs.Block, options);
+            Enqueue(blockEventArgs.Block, options);
         }
 
-        public void SuggestBlock(Block block, ProcessingOptions processingOptions)
+        public void Enqueue(Block block, ProcessingOptions processingOptions)
         {
             if (_logger.IsTrace) _logger.Trace($"Enqueuing a new block {block.ToString(Block.Format.Short)} for processing.");
 
@@ -154,7 +159,7 @@ namespace Nethermind.Blockchain
             });
         }
 
-        public async Task StopAsync(bool processRemainingBlocks)
+        public async Task StopAsync(bool processRemainingBlocks = false)
         {
             if (processRemainingBlocks)
             {
@@ -223,7 +228,7 @@ namespace Nethermind.Blockchain
             _stats.Start();
             if (_logger.IsDebug) _logger.Debug($"Starting block processor - {_blockQueue.Count} blocks waiting in the queue.");
 
-            if (_blockQueue.Count == 0)
+            if (IsEmpty)
             {
                 ProcessingQueueEmpty?.Invoke(this, EventArgs.Empty);
             }
@@ -240,10 +245,6 @@ namespace Nethermind.Blockchain
                 if (_logger.IsTrace) _logger.Trace($"Processing block {block.ToString(Block.Format.Short)}).");
 
                 IBlockTracer tracer = NullBlockTracer.Instance;
-                if ((blockRef.ProcessingOptions & ProcessingOptions.StoreTraces) != 0)
-                {
-                    tracer = new ParityLikeBlockTracer(ParityTraceTypes.Trace | ParityTraceTypes.StateDiff);
-                }
 
                 Block processedBlock = Process(block, blockRef.ProcessingOptions, tracer);
                 if (processedBlock == null)
@@ -257,19 +258,21 @@ namespace Nethermind.Blockchain
                 }
 
                 if (_logger.IsTrace) _logger.Trace($"Now {_blockQueue.Count} blocks waiting in the queue.");
-                if (_blockQueue.Count == 0)
+                if (IsEmpty)
                 {
                     ProcessingQueueEmpty?.Invoke(this, EventArgs.Empty);
                 }
             }
 
-            if (_logger.IsTrace) _logger.Trace($"Returns from processing loop");
+            if (_logger.IsInfo) _logger.Info("Block processor queue stopped.");
         }
 
         public event EventHandler ProcessingQueueEmpty;
 
+        public bool IsEmpty => _blockQueue.Count == 0 && _recoveryQueue.Count == 0;
+
         [Todo("Introduce priority queue and create a SuggestWithPriority that waits for block execution to return a block, then make this private")]
-        public Block Process(Block suggestedBlock, ProcessingOptions options, IBlockTracer blockTracer)
+        public Block Process(Block suggestedBlock, ProcessingOptions options, IBlockTracer tracer)
         {
             if (!RunSimpleChecksAheadOfProcessing(suggestedBlock, options))
             {
@@ -281,7 +284,15 @@ namespace Nethermind.Blockchain
 
             BlockHeader branchingPoint = null;
             Block[] processedBlocks = null;
-            if (_blockTree.Head == null || totalDifficulty > _blockTree.Head.TotalDifficulty || (options & ProcessingOptions.ForceProcessing) != 0)
+            
+            bool shouldProcess = suggestedBlock.IsGenesis
+                                 || totalDifficulty > (_blockTree.Head?.TotalDifficulty ?? 0)
+                                 // so above is better and more correct but creates an impression of the node staying behind on stats page
+                                 // so we are okay to process slightly more
+                                 // and below is less correct but potentially reporting well
+                                 // || totalDifficulty >= (_blockTree.Head?.TotalDifficulty ?? 0)
+                                 || (options & ProcessingOptions.ForceProcessing) == ProcessingOptions.ForceProcessing;
+            if (shouldProcess)
             {
                 List<Block> blocksToBeAddedToMain = new List<Block>();
                 Block toBeProcessed = suggestedBlock;
@@ -299,7 +310,14 @@ namespace Nethermind.Blockchain
                     {
                         break; //failure here
                     }
-
+                    
+                    // for beam sync we do not expect previous blocks to necessarily be there and we
+                    // do not need them since we can requests state from outside
+                    if((options & ProcessingOptions.IgnoreParentNotOnMainChain) != 0)
+                    {
+                        break;
+                    }
+                    
                     bool isFastSyncTransition = _blockTree.Head == _blockTree.Genesis && toBeProcessed.Number > 1; 
                     if (!isFastSyncTransition)
                     {
@@ -369,7 +387,7 @@ namespace Nethermind.Blockchain
 
                 try
                 {
-                    processedBlocks = _blockProcessor.Process(stateRoot, blocks, options, blockTracer);
+                    processedBlocks = _blockProcessor.Process(stateRoot, blocks, options, tracer);
                 }
                 catch (InvalidBlockException ex)
                 {
@@ -386,7 +404,7 @@ namespace Nethermind.Blockchain
 
                 if ((options & ProcessingOptions.ReadOnlyChain) == 0)
                 {
-                    _blockTree.UpdateMainChain(blocksToBeAddedToMain.ToArray());
+                    _blockTree.UpdateMainChain(blocksToBeAddedToMain.ToArray(), true);
                 }
             }
             else
@@ -397,9 +415,9 @@ namespace Nethermind.Blockchain
             Block lastProcessed = null;
             if (processedBlocks != null && processedBlocks.Length > 0)
             {
-                lastProcessed = processedBlocks[processedBlocks.Length - 1];
+                lastProcessed = processedBlocks[^1];
                 if (_logger.IsTrace) _logger.Trace($"Setting total on last processed to {lastProcessed.ToString(Block.Format.Short)}");
-                lastProcessed.TotalDifficulty = suggestedBlock.TotalDifficulty;
+                lastProcessed.Header.TotalDifficulty = suggestedBlock.TotalDifficulty;
             }
             else
             {
@@ -465,6 +483,16 @@ namespace Nethermind.Blockchain
             public Keccak BlockHash { get; set; }
             public Block Block { get; set; }
             public ProcessingOptions ProcessingOptions { get; }
+        }
+
+        public void Dispose()
+        {
+            _recoveryQueue?.Dispose();
+            _blockQueue?.Dispose();
+            _loopCancellationSource?.Dispose();
+            _recoveryTask?.Dispose();
+            _processorTask?.Dispose();
+            _blockTree.NewBestSuggestedBlock -= OnNewBestBlock;
         }
     }
 }

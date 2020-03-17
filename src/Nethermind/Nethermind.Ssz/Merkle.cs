@@ -15,44 +15,39 @@
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
-using System.Buffers.Binary;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
-using System.Security.Cryptography;
-using System.Text;
-using Nethermind.Core;
-using Nethermind.Core.Crypto;
-using Nethermind.Core.Extensions;
 using Nethermind.Core2;
+using Nethermind.Core2.Crypto;
+using Nethermind.Core2.Types;
 using Nethermind.Dirichlet.Numerics;
 using Chunk = Nethermind.Dirichlet.Numerics.UInt256;
 
 namespace Nethermind.Ssz
 {
-    public class Merkle
+    public static partial class Merkle
     {
         public static UInt256[] ZeroHashes = new UInt256[64];
 
         private static void BuildZeroHashes()
         {
             Span<UInt256> concatenation = stackalloc UInt256[2];
-            UInt256.CreateFromLittleEndian(out ZeroHashes[0], Sha256.Zero.Bytes);
+            // ZeroHashes[0] will be UInt256.Zero
             for (int i = 1; i < 64; i++)
             {
                 var previous = ZeroHashes[i - 1];
                 MemoryMarshal.CreateSpan(ref previous, 1).CopyTo(concatenation.Slice(0, 1));
                 MemoryMarshal.CreateSpan(ref previous, 1).CopyTo(concatenation.Slice(1, 1));
-                UInt256.CreateFromLittleEndian(out ZeroHashes[i], Sha256.Compute(MemoryMarshal.Cast<UInt256, byte>(concatenation)).Bytes);
+                UInt256.CreateFromLittleEndian(out ZeroHashes[i], Sha256.Compute(MemoryMarshal.Cast<UInt256, byte>(concatenation)).AsSpan().ToArray());
             }
         }
 
         static Merkle()
         {
             BuildZeroHashes();
+            UInt256.CreateFromBigEndian(out RootOfNull, Sha256.RootOfAnEmptyString.AsSpan().ToArray());
         }
 
-        [Todo(Improve.Refactor, "Consider moving to extensions")]
         public static uint NextPowerOfTwo(uint v)
         {
             if (Lzcnt.IsSupported)
@@ -71,17 +66,44 @@ namespace Nethermind.Ssz
             return v;
         }
 
-        public static uint NextPowerOfTwoExponent(uint v)
+        public static int NextPowerOfTwoExponent(ulong v)
         {
+            if (v == 0)
+            {
+                return 0;
+            }
+            
+            int leadingZeros = 0;
             if (Lzcnt.IsSupported)
             {
-                return 32 - Lzcnt.LeadingZeroCount(--v);
+                leadingZeros = (int) Lzcnt.X64.LeadingZeroCount(--v);
+            }
+            else
+            {
+                leadingZeros = CountLeadingZeros(v);
             }
 
-            throw new NotImplementedException();
+            return 64 - leadingZeros;
         }
 
-        [Todo(Improve.Refactor, "Consider moving to extensions")]
+        private static int CountLeadingZeros(ulong x)
+        {
+            x--;
+            
+            int count = 0;
+            for (int i = 63; i >= 0; i--)
+            {
+                if (x / (1UL << i) == 1)
+                {
+                    break;
+                }
+                
+                count++;
+            }
+
+            return count;
+        }
+
         public static ulong NextPowerOfTwo(ulong v)
         {
             if (Lzcnt.IsSupported)
@@ -103,10 +125,10 @@ namespace Nethermind.Ssz
 
         private static Chunk Compute(Span<Chunk> span)
         {
-            return MemoryMarshal.Cast<byte, Chunk>(Sha256.Compute(MemoryMarshal.Cast<Chunk, byte>(span)).Bytes)[0];
+            return MemoryMarshal.Cast<byte, Chunk>(Sha256.ComputeBytes(MemoryMarshal.Cast<Chunk, byte>(span)))[0];
         }
 
-        private static Chunk HashConcatenation(Chunk left, Chunk right, int level)
+        internal static Chunk HashConcatenation(Chunk left, Chunk right, int level)
         {
             if (IsZeroHash(left, level) && IsZeroHash(right, level))
             {
@@ -124,55 +146,79 @@ namespace Nethermind.Ssz
             return span.Equals(ZeroHashes[level]);
         }
 
-        private static void MixIn(Span<byte> span, int value)
+        public static void MixIn(ref UInt256 root, int value)
         {
-            Span<byte> valueBytes = stackalloc byte[32];
-            BinaryPrimitives.WriteInt32LittleEndian(valueBytes.Slice(0, 4), value);
-            Chunk result = HashConcatenation(MemoryMarshal.Cast<byte, Chunk>(span)[0], MemoryMarshal.Cast<byte, Chunk>(valueBytes)[0], 0);
-            result.ToLittleEndian(span);
+            UInt256.Create(out UInt256 lengthPart, value);
+            root = HashConcatenation(root, lengthPart, 0);
         }
 
-        public static void Ize(Span<byte> root, bool value)
+        public static void Ize(out UInt256 root, bool value)
         {
-            root[0] = Ssz.Encode(value);
-        }
-        
-        public static void Ize(Span<byte> root, byte value)
-        {
-            Ssz.Encode(root.Slice(0, 1), value);
+            root = value ? UInt256.One : UInt256.Zero;
         }
 
-        public static void Ize(Span<byte> root, ushort value)
+        public static void Ize(out UInt256 root, byte value)
         {
-            Ssz.Encode(root.Slice(0, 2), value);
+            UInt256.Create(out root, value);
         }
 
-        public static void Ize(Span<byte> root, int value)
+        public static void Ize(out UInt256 root, ushort value)
         {
-            Ize(root, (uint) value);
-        }
-        
-        public static void Ize(Span<byte> root, uint value)
-        {
-            Ssz.Encode(root.Slice(0, 4), value);
+            UInt256.Create(out root, value);
         }
 
-        public static void Ize(Span<byte> root, ulong value)
+        public static void Ize(out UInt256 root, int value)
         {
-            Ssz.Encode(root.Slice(0, 8), value);
+            UInt256.Create(out root, value);
         }
 
-        public static void Ize(Span<byte> root, UInt128 value)
+        public static void Ize(out UInt256 root, uint value)
         {
-            Ssz.Encode(root.Slice(0, 16), value);
+            UInt256.Create(out root, value);
         }
 
-        public static void Ize(Span<byte> root, UInt256 value)
+        public static void Ize(out UInt256 root, ulong value)
         {
-            Ssz.Encode(root, value);
+            UInt256.Create(out root, value);
         }
 
-        public static void Ize(Span<byte> root, Span<bool> value)
+        public static void Ize(out UInt256 root, UInt128 value)
+        {
+            UInt256.Create(out root, value);
+        }
+
+        public static void Ize(out UInt256 root, UInt256 value)
+        {
+            root = value;
+        }
+
+        public static void Ize(out UInt256 root, Bytes32 value)
+        {
+            ReadOnlySpan<byte> readOnlyBytes = value.AsSpan();
+            unsafe
+            {
+                fixed (byte* buffer = &readOnlyBytes.GetPinnableReference())
+                {
+                    Span<byte> apiNeedsWriteableEvenThoughOnlyReading = new Span<byte>(buffer, readOnlyBytes.Length);
+                    UInt256.CreateFromLittleEndian(out root, apiNeedsWriteableEvenThoughOnlyReading);
+                }
+            }
+        }
+
+        public static void Ize(out UInt256 root, Root value)
+        {
+            ReadOnlySpan<byte> readOnlyBytes = value.AsSpan();
+            unsafe
+            {
+                fixed (byte* buffer = &readOnlyBytes.GetPinnableReference())
+                {
+                    Span<byte> apiNeedsWriteableEvenThoughOnlyReading = new Span<byte>(buffer, readOnlyBytes.Length);
+                    UInt256.CreateFromLittleEndian(out root, apiNeedsWriteableEvenThoughOnlyReading);
+                }
+            }
+        }
+
+        public static void Ize(out UInt256 root, Span<bool> value)
         {
             const int typeSize = 1;
             int partialChunkLength = value.Length % (32 / typeSize);
@@ -181,15 +227,15 @@ namespace Nethermind.Ssz
                 Span<bool> fullChunks = value.Slice(0, value.Length - partialChunkLength);
                 Span<bool> lastChunk = stackalloc bool[32 / typeSize];
                 value.Slice(value.Length - partialChunkLength).CopyTo(lastChunk);
-                Ize(root, MemoryMarshal.Cast<bool, Chunk>(fullChunks), MemoryMarshal.Cast<bool, Chunk>(lastChunk));
+                Ize(out root, MemoryMarshal.Cast<bool, Chunk>(fullChunks), MemoryMarshal.Cast<bool, Chunk>(lastChunk));
             }
             else
             {
-                Ize(root, MemoryMarshal.Cast<bool, Chunk>(value), Span<Chunk>.Empty);
+                Ize(out root, MemoryMarshal.Cast<bool, Chunk>(value));
             }
         }
 
-        public static void Ize(Span<byte> root, Span<byte> value)
+        public static void Ize(out UInt256 root, Span<byte> value)
         {
             const int typeSize = 1;
             int partialChunkLength = value.Length % (32 / typeSize);
@@ -198,15 +244,32 @@ namespace Nethermind.Ssz
                 Span<byte> fullChunks = value.Slice(0, value.Length - partialChunkLength);
                 Span<byte> lastChunk = stackalloc byte[32 / typeSize];
                 value.Slice(value.Length - partialChunkLength).CopyTo(lastChunk);
-                Ize(root, MemoryMarshal.Cast<byte, Chunk>(fullChunks), MemoryMarshal.Cast<byte, Chunk>(lastChunk));
+                Ize(out root, MemoryMarshal.Cast<byte, Chunk>(fullChunks), MemoryMarshal.Cast<byte, Chunk>(lastChunk));
             }
             else
             {
-                Ize(root, MemoryMarshal.Cast<byte, Chunk>(value), Span<Chunk>.Empty);
+                Ize(out root, MemoryMarshal.Cast<byte, Chunk>(value));
             }
         }
-
-        public static void IzeBits(Span<byte> root, Span<byte> value, uint limit)
+        
+        public static void Ize(out UInt256 root, ReadOnlySpan<byte> value, ulong chunkCount)
+        {
+            const int typeSize = 1;
+            int partialChunkLength = value.Length % (32 / typeSize);
+            if (partialChunkLength > 0)
+            {
+                ReadOnlySpan<byte> fullChunks = value.Slice(0, value.Length - partialChunkLength);
+                Span<byte> lastChunk = stackalloc byte[32 / typeSize];
+                value.Slice(value.Length - partialChunkLength).CopyTo(lastChunk);
+                Ize(out root, MemoryMarshal.Cast<byte, Chunk>(fullChunks), MemoryMarshal.Cast<byte, Chunk>(lastChunk), chunkCount);
+            }
+            else
+            {
+                Ize(out root, MemoryMarshal.Cast<byte, Chunk>(value), chunkCount);
+            }
+        }
+        
+        public static void IzeBits(out UInt256 root, Span<byte> value, uint limit)
         {
             // reset lowest bit perf
             int lastBitPosition = ResetLastBit(ref value[^1]);
@@ -223,14 +286,14 @@ namespace Nethermind.Ssz
                 Span<byte> fullChunks = value.Slice(0, value.Length - partialChunkLength);
                 Span<byte> lastChunk = stackalloc byte[32 / typeSize];
                 value.Slice(value.Length - partialChunkLength).CopyTo(lastChunk);
-                Ize(root, MemoryMarshal.Cast<byte, Chunk>(fullChunks), MemoryMarshal.Cast<byte, Chunk>(lastChunk), limit);
+                Ize(out root, MemoryMarshal.Cast<byte, Chunk>(fullChunks), MemoryMarshal.Cast<byte, Chunk>(lastChunk), limit);
             }
             else
             {
-                Ize(root, MemoryMarshal.Cast<byte, Chunk>(value), Span<Chunk>.Empty, limit);
+                Ize(out root, MemoryMarshal.Cast<byte, Chunk>(value), Span<Chunk>.Empty, limit);
             }
 
-            MixIn(root, length);
+            MixIn(ref root, length);
         }
 
         private static int ResetLastBit(ref byte lastByte)
@@ -286,7 +349,7 @@ namespace Nethermind.Ssz
             return 8;
         }
 
-        public static void Ize(Span<byte> root, Span<ushort> value)
+        public static void Ize(out UInt256 root, Span<ushort> value)
         {
             const int typeSize = 2;
             int partialChunkLength = value.Length % (32 / typeSize);
@@ -295,15 +358,15 @@ namespace Nethermind.Ssz
                 Span<ushort> fullChunks = value.Slice(0, value.Length - partialChunkLength);
                 Span<ushort> lastChunk = stackalloc ushort[32 / typeSize];
                 value.Slice(value.Length - partialChunkLength).CopyTo(lastChunk);
-                Ize(root, MemoryMarshal.Cast<ushort, Chunk>(fullChunks), MemoryMarshal.Cast<ushort, Chunk>(lastChunk));
+                Ize(out root, MemoryMarshal.Cast<ushort, Chunk>(fullChunks), MemoryMarshal.Cast<ushort, Chunk>(lastChunk));
             }
             else
             {
-                Ize(root, MemoryMarshal.Cast<ushort, Chunk>(value), Span<Chunk>.Empty);
+                Ize(out root, MemoryMarshal.Cast<ushort, Chunk>(value));
             }
         }
 
-        public static void Ize(Span<byte> root, Span<uint> value)
+        public static void Ize(out UInt256 root, Span<uint> value)
         {
             const int typeSize = 4;
             int partialChunkLength = value.Length % (32 / typeSize);
@@ -312,32 +375,33 @@ namespace Nethermind.Ssz
                 Span<uint> fullChunks = value.Slice(0, value.Length - partialChunkLength);
                 Span<uint> lastChunk = stackalloc uint[32 / typeSize];
                 value.Slice(value.Length - partialChunkLength).CopyTo(lastChunk);
-                Ize(root, MemoryMarshal.Cast<uint, Chunk>(fullChunks), MemoryMarshal.Cast<uint, Chunk>(lastChunk));
+                Ize(out root, MemoryMarshal.Cast<uint, Chunk>(fullChunks), MemoryMarshal.Cast<uint, Chunk>(lastChunk));
             }
             else
             {
-                Ize(root, MemoryMarshal.Cast<uint, Chunk>(value), Span<Chunk>.Empty);
+                Ize(out root, MemoryMarshal.Cast<uint, Chunk>(value));
             }
         }
 
-        public static void Ize(Span<byte> root, Span<ulong> value)
+        public static void Ize(out UInt256 root, Span<ulong> value, ulong maxLength = 0U)
         {
-            const int typeSize = 8;
+            const int typeSize = sizeof(ulong);
+            ulong limit = (maxLength * typeSize + 31) / 32;
             int partialChunkLength = value.Length % (32 / typeSize);
             if (partialChunkLength > 0)
             {
                 Span<ulong> fullChunks = value.Slice(0, value.Length - partialChunkLength);
                 Span<ulong> lastChunk = stackalloc ulong[32 / typeSize];
                 value.Slice(value.Length - partialChunkLength).CopyTo(lastChunk);
-                Ize(root, MemoryMarshal.Cast<ulong, Chunk>(fullChunks), MemoryMarshal.Cast<ulong, Chunk>(lastChunk));
+                Ize(out root, MemoryMarshal.Cast<ulong, Chunk>(fullChunks), MemoryMarshal.Cast<ulong, Chunk>(lastChunk), limit);
             }
             else
             {
-                Ize(root, MemoryMarshal.Cast<ulong, Chunk>(value), Span<Chunk>.Empty);
+                Ize(out root, MemoryMarshal.Cast<ulong, Chunk>(value), limit);
             }
         }
 
-        public static void Ize(Span<byte> root, Span<UInt128> value)
+        public static void Ize(out UInt256 root, Span<UInt128> value)
         {
             const int typeSize = 16;
             int partialChunkLength = value.Length % (32 / typeSize);
@@ -346,104 +410,55 @@ namespace Nethermind.Ssz
                 Span<UInt128> fullChunks = value.Slice(0, value.Length - partialChunkLength);
                 Span<UInt128> lastChunk = stackalloc UInt128[32 / typeSize];
                 value.Slice(value.Length - partialChunkLength).CopyTo(lastChunk);
-                Ize(root, MemoryMarshal.Cast<UInt128, Chunk>(fullChunks), MemoryMarshal.Cast<UInt128, Chunk>(lastChunk));
+                Ize(out root, MemoryMarshal.Cast<UInt128, Chunk>(fullChunks), MemoryMarshal.Cast<UInt128, Chunk>(lastChunk));
             }
             else
             {
-                Ize(root, MemoryMarshal.Cast<UInt128, Chunk>(value), Span<Chunk>.Empty);
+                Ize(out root, MemoryMarshal.Cast<UInt128, Chunk>(value));
             }
         }
 
-        public static void Ize(Span<byte> root, Span<UInt256> value)
+        public static void Ize(out UInt256 root, ReadOnlySpan<UInt256> value, ReadOnlySpan<UInt256> lastChunk, ulong limit = 0)
         {
-            Ize(root, value, Span<UInt256>.Empty);
+            if (limit == 0 && (value.Length + lastChunk.Length == 1))
+            {
+                root = value.Length == 0 ? lastChunk[0] : value[0];
+                return;
+            }
+
+            int depth = NextPowerOfTwoExponent(limit == 0UL ? (uint) (value.Length + lastChunk.Length) : limit);
+            Merkleizer merkleizer = new Merkleizer(depth);
+            int length = value.Length;
+            for (int i = 0; i < length; i++)
+            {
+                merkleizer.Feed(value[i]);
+            }
+
+            if (lastChunk.Length > 0)
+            {
+                merkleizer.Feed(lastChunk[0]);
+            }
+
+            merkleizer.CalculateRoot(out root);
         }
 
-        private static void Ize(Span<byte> root, Span<Chunk> value, Span<Chunk> lastChunk, uint limit = 0)
+        public static void Ize(out UInt256 root, ReadOnlySpan<UInt256> value, ulong limit = 0UL)
         {
-            // everything here (including last chunk) is designed for zero allocation
-            // the last chunk introduces a lot of additional complexity
-            
-            int nonVirtualChunksCount = value.Length + lastChunk.Length;
-            uint chunkCount = NextPowerOfTwo(limit != 0 ? limit : (uint) nonVirtualChunksCount);
-
-            int level = 0;
-            Chunk left = ZeroHashes[0];
-            Chunk right = ZeroHashes[0];
-
-            Span<Chunk> result = stackalloc UInt256[1];
-            if (nonVirtualChunksCount == 0)
+            if (limit == 0 && value.Length == 1)
             {
-                // if everything is virtual then we just need to find the right level of zero-hash
-                uint exponent = NextPowerOfTwoExponent(limit != 0 ? limit : (uint) nonVirtualChunksCount);
-                result[0] = ZeroHashes[exponent];
-            }
-            else
-            {
-                while (chunkCount > 1)
-                {
-                    int position = 0;
-                    while (position < chunkCount - 1)
-                    {
-                        // we pick left and right between value position, last chunk or virtual (zero-hash)
-                        if (position < value.Length - 1)
-                        {
-                            left = value[position];
-                            right = value[position + 1];
-                        }
-                        else if (position == value.Length - 1)
-                        {
-                            left = value[position];
-                            right = lastChunk.IsEmpty ? ZeroHashes[level] : lastChunk[0];
-                            if (value.Length > 0) // if no value then we use the last chunk for result storage
-                            {
-                                lastChunk = Span<Chunk>.Empty; // we read it only once and will not use for result storage
-                            }
-                        }
-                        else if (position == value.Length)
-                        {
-                            left = lastChunk.IsEmpty ? ZeroHashes[level] : lastChunk[0];
-                            right = ZeroHashes[level];
-                            if (value.Length > 0) // if no value then we use the last chunk for result storage
-                            {
-                                lastChunk = Span<Chunk>.Empty; // we read it only once and will not use for result storage
-                            }
-                        }
-                        else if (position > value.Length)
-                        {
-                            left = ZeroHashes[level];
-                            right = ZeroHashes[level];
-                        }
-
-                        Chunk hash = HashConcatenation(left, right, level);
-                        if (value.Length == 0 && position == 0)
-                        {
-                            // here we use the last chunk for result storage
-                            // we just need one chunk as with no value chunks all other chunks are virtual
-                            // and can be zero-hashed 
-                            lastChunk[0] = hash;
-                        }
-                        else if (value.Length > position / 2)
-                        {
-                            // we are overwriting the first half of the chunks with the next level
-                            value[position / 2] = hash;
-                        }
-
-                        // we hash two items at the time for the binary tree
-                        position += 2;
-                    }
-
-                    // we will consider only the first half of the chunks for the next level
-                    // we stored there the results from hashing
-                    chunkCount >>= 1;
-                    level++;
-                }
-
-                // by default we store result in the first value chunk or the last chunk if the value is empty
-                result = value.Length > 0 ? value.Slice(0, 1) : lastChunk;
+                root = value[0];
+                return;
             }
 
-            MemoryMarshal.Cast<Chunk, byte>(result).CopyTo(root);
+            int depth = NextPowerOfTwoExponent(limit == 0UL ? (ulong) value.Length : limit);
+            Merkleizer merkleizer = new Merkleizer(depth);
+            int length = value.Length;
+            for (int i = 0; i < length; i++)
+            {
+                merkleizer.Feed(value[i]);
+            }
+
+            merkleizer.CalculateRoot(out root);
         }
     }
 }

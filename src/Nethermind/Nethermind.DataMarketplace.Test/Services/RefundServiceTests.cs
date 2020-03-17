@@ -1,20 +1,18 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Text;
@@ -55,7 +53,7 @@ namespace Nethermind.DataMarketplace.Test.Services
             uint timestamp = 1546871954;
             _bridge.NextBlockPlease(timestamp);
             
-            DepositService depositService = new DepositService(_ndmBridge, _txPool, _abiEncoder, _wallet, _contractAddress, LimboLogs.Instance);
+            DepositService depositService = new DepositService(_ndmBridge, _abiEncoder, _wallet, _contractAddress);
             Keccak assetId = Keccak.Compute("data asset");
             uint expiryTime = timestamp + 4;
             UInt256 value = 1.Ether();
@@ -74,7 +72,7 @@ namespace Nethermind.DataMarketplace.Test.Services
             Keccak depositId = Keccak.Compute(depositData);
 
             Deposit deposit = new Deposit(depositId, units, expiryTime, value);
-            Keccak depositTxHash = await depositService.MakeDepositAsync(_consumerAccount, deposit);
+            Keccak depositTxHash = await depositService.MakeDepositAsync(_consumerAccount, deposit, 20.GWei());
             TxReceipt depositTxReceipt = _bridge.GetReceipt(depositTxHash);
             TestContext.WriteLine("GAS USED FOR DEPOSIT: {0}", depositTxReceipt.GasUsed);
             Assert.AreEqual(StatusCode.Success, depositTxReceipt.StatusCode, $"deposit made {depositTxReceipt.Error} {Encoding.UTF8.GetString(depositTxReceipt.ReturnValue ?? new byte[0])}");
@@ -89,7 +87,7 @@ namespace Nethermind.DataMarketplace.Test.Services
             _bridge.NextBlockPlease(expiryTime + 1);
             RefundClaim refundClaim = new RefundClaim(depositId, assetId, units, value, expiryTime, salt, _providerAccount, _consumerAccount);
             UInt256 balanceBefore = _state.GetBalance(_consumerAccount);
-            Keccak refundTxHash = await refundService.ClaimRefundAsync(_consumerAccount, refundClaim);
+            Keccak refundTxHash = await refundService.ClaimRefundAsync(_consumerAccount, refundClaim, 20.GWei());
             TxReceipt refundReceipt = _bridge.GetReceipt(refundTxHash);
             TestContext.WriteLine("GAS USED FOR REFUND CLAIM: {0}", refundReceipt.GasUsed);
             Assert.AreEqual(StatusCode.Success, refundReceipt.StatusCode, $"refund claim {refundReceipt.Error} {Encoding.UTF8.GetString(refundReceipt.ReturnValue ?? new byte[0])}");
@@ -103,7 +101,7 @@ namespace Nethermind.DataMarketplace.Test.Services
             uint timestamp = 1546871954;
             _bridge.NextBlockPlease(timestamp);
             
-            DepositService depositService = new DepositService(_ndmBridge, _txPool, _abiEncoder, _wallet, _contractAddress, LimboLogs.Instance);
+            DepositService depositService = new DepositService(_ndmBridge, _abiEncoder, _wallet, _contractAddress);
             Keccak assetId = Keccak.Compute("data asset");
             uint expiryTime = timestamp + (uint)TimeSpan.FromDays(4).TotalSeconds;
             UInt256 value = 1.Ether();
@@ -123,7 +121,7 @@ namespace Nethermind.DataMarketplace.Test.Services
             Keccak depositId = Keccak.Compute(depositData);
 
             Deposit deposit = new Deposit(depositId, units, expiryTime, value);
-            Keccak depositTxHash = await depositService.MakeDepositAsync(_consumerAccount, deposit);
+            Keccak depositTxHash = await depositService.MakeDepositAsync(_consumerAccount, deposit, 20.GWei());
             TxReceipt depositTxReceipt = _bridge.GetReceipt(depositTxHash);
             TestContext.WriteLine("GAS USED FOR DEPOSIT: {0}", depositTxReceipt.GasUsed);
             Assert.AreEqual(StatusCode.Success, depositTxReceipt.StatusCode, $"deposit made {depositTxReceipt.Error} {Encoding.UTF8.GetString(depositTxReceipt.ReturnValue ?? new byte[0])}");
@@ -145,7 +143,7 @@ namespace Nethermind.DataMarketplace.Test.Services
             EarlyRefundClaim earlyRefundClaim = new EarlyRefundClaim(depositId, assetId, units, value, expiryTime, pepper, _providerAccount, claimableAfter, earlySig,_consumerAccount);
             UInt256 balanceBefore = _state.GetBalance(_consumerAccount);
             
-            Keccak refundTxHash = await refundService.ClaimEarlyRefundAsync(_consumerAccount, earlyRefundClaim);
+            Keccak refundTxHash = await refundService.ClaimEarlyRefundAsync(_consumerAccount, earlyRefundClaim, 20.GWei());
             TxReceipt refundReceipt = _bridge.GetReceipt(refundTxHash);
             TestContext.WriteLine("GAS USED FOR EARLY REFUND CLAIM: {0}", refundReceipt.GasUsed);
             Assert.AreEqual(StatusCode.Success, refundReceipt.StatusCode, $"early refund claim {refundReceipt.Error} {Encoding.UTF8.GetString(refundReceipt.ReturnValue ?? new byte[0])}");
@@ -169,7 +167,7 @@ namespace Nethermind.DataMarketplace.Test.Services
         {
             const RefundReason reason = RefundReason.DataDiscontinued;
             var deposit = new Deposit(TestItem.KeccakA, 1, 1, 1);
-            var depositDetails = new DepositDetails(deposit, null, null, null, 0, null);
+            var depositDetails = new DepositDetails(deposit, null, null, null, 0, null, 0);
             var ticket = new EarlyRefundTicket(deposit.Id, 0, null);
             var refundService = new RefundService(_ndmBridge, _abiEncoder, _wallet, _depositRepository, _contractAddress, LimboLogs.Instance);
             _depositRepository.GetAsync(ticket.DepositId).Returns(depositDetails);

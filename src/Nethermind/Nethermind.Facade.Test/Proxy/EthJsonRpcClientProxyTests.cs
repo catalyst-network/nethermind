@@ -97,8 +97,6 @@ namespace Nethermind.Facade.Test.Proxy
         }
 
         [Test]
-        
-        
         public async Task eth_getCode_should_invoke_client_method()
         {
             var address = TestItem.AddressA;
@@ -114,6 +112,13 @@ namespace Nethermind.Facade.Test.Proxy
             var hash = TestItem.KeccakA;
             await _proxy.eth_getTransactionByHash(hash);
             await _client.Received().SendAsync<TransactionModel>(nameof(_proxy.eth_getTransactionByHash), hash);
+        }
+        
+        [Test]
+        public async Task eth_pendingTransactions_should_invoke_client_method()
+        {
+            await _proxy.eth_pendingTransactions();
+            await _client.Received().SendAsync<TransactionModel[]>(nameof(_proxy.eth_pendingTransactions));
         }
 
         [Test]

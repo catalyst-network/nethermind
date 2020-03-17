@@ -1,34 +1,35 @@
-﻿/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+﻿//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Nethermind.Blockchain.Find;
 using Nethermind.Blockchain.Receipts;
 using Nethermind.Blockchain.Synchronization;
 using Nethermind.Blockchain.Synchronization.FastSync;
 using Nethermind.Blockchain.Validators;
+using Nethermind.Consensus;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
-using Nethermind.Core.Specs;
+using Nethermind.Specs;
 using Nethermind.Core.Test.Builders;
+using Nethermind.Db;
 using Nethermind.Logging;
-using Nethermind.Mining;
+using Nethermind.Network;
 using Nethermind.Stats;
 using Nethermind.Store;
 using NSubstitute;
@@ -39,7 +40,7 @@ namespace Nethermind.Blockchain.Test.Synchronization
     [TestFixture]
     public class OldStyleFullSynchronizerTests
     {
-        private readonly TimeSpan _standardTimeoutUnit = TimeSpan.FromMilliseconds(1000);
+        private readonly TimeSpan _standardTimeoutUnit = TimeSpan.FromMilliseconds(2000);
         
         [SetUp]
         public void Setup()
@@ -58,9 +59,9 @@ namespace Nethermind.Blockchain.Test.Synchronization
             ITxValidator txValidator = Build.A.TransactionValidator.ThatAlwaysReturnsTrue.TestObject;
 
             var stats = new NodeStatsManager(new StatsConfig(), LimboLogs.Instance);
-            _pool = new EthSyncPeerPool(_blockTree, stats, quickConfig, 25, LimboLogs.Instance);
-            _synchronizer = new Synchronizer(MainNetSpecProvider.Instance, _blockTree, NullReceiptStorage.Instance, blockValidator, sealValidator, _pool, quickConfig, Substitute.For<INodeDataDownloader>(), NullSyncReport.Instance, LimboLogs.Instance);
-            _syncServer = new SyncServer(_stateDb, _codeDb, _blockTree, _receiptStorage, sealValidator, _pool, _synchronizer, quickConfig, LimboLogs.Instance);
+            _pool = new EthSyncPeerPool(_blockTree, stats, 25, LimboLogs.Instance);
+            _synchronizer = new Synchronizer(MainNetSpecProvider.Instance, _blockTree, NullReceiptStorage.Instance, blockValidator, sealValidator, _pool, quickConfig, Substitute.For<INodeDataDownloader>(), Substitute.For<INodeStatsManager>(), LimboLogs.Instance);
+            _syncServer = new SyncServer(_stateDb, _codeDb, _blockTree, _receiptStorage, blockValidator, sealValidator, _pool, _synchronizer, quickConfig, LimboLogs.Instance);
         }
 
         [TearDown]
@@ -179,7 +180,7 @@ namespace Nethermind.Blockchain.Test.Synchronization
             Assert.AreEqual(SyncBatchSize.Max - 1, (int) _blockTree.BestSuggestedHeader.Number);
         }
 
-        [Test]
+        [Test, Retry(3)]
         public void Can_sync_on_split_of_length_1()
         {
             BlockTree miner1Tree = Build.A.BlockTree(_genesisBlock).OfChainLength(6).TestObject;
@@ -331,6 +332,7 @@ namespace Nethermind.Blockchain.Test.Synchronization
         public void Can_retrieve_node_values()
         {
             _stateDb.Set(TestItem.KeccakA, TestItem.RandomDataA);
+            _stateDb.Commit();
             byte[][] values = _syncServer.GetNodeData(new[] {TestItem.KeccakA, TestItem.KeccakB});
             Assert.AreEqual(2, values.Length, "data.Length");
             Assert.AreEqual(TestItem.RandomDataA, values[0], "data[0]");

@@ -1,34 +1,33 @@
-﻿/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+﻿//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Nethermind.Blockchain.Synchronization;
-using Nethermind.Blockchain.TxPools;
 using Nethermind.Core;
+using Nethermind.Core.Attributes;
 using Nethermind.Core.Crypto;
 using Nethermind.Logging;
 using Nethermind.Network.Rlpx;
 using Nethermind.Stats;
-using Nethermind.Stats.Model;
+using Nethermind.TxPool;
 
 namespace Nethermind.Network.P2P.Subprotocols.Eth.V63
 {
@@ -40,17 +39,14 @@ namespace Nethermind.Network.P2P.Subprotocols.Eth.V63
         private readonly BlockingCollection<Request<GetReceiptsMessage, TxReceipt[][]>> _receiptsRequests
             = new BlockingCollection<Request<GetReceiptsMessage, TxReceipt[][]>>();
 
-        public Eth63ProtocolHandler(
-            ISession session,
+        public Eth63ProtocolHandler(ISession session,
             IMessageSerializationService serializer,
             INodeStatsManager nodeStatsManager,
             ISyncServer syncServer,
-            ILogManager logManager, IPerfService perfService,
-            ITxPool txPool) : base(session, serializer, nodeStatsManager, syncServer, logManager, perfService, txPool)
+            ILogManager logManager,
+            ITxPool txPool) : base(session, serializer, nodeStatsManager, syncServer, logManager, txPool)
         {
         }
-
-        public override bool IsFastSyncSupported => true;
 
         public override byte ProtocolVersion => 63;
 
@@ -60,94 +56,117 @@ namespace Nethermind.Network.P2P.Subprotocols.Eth.V63
         {
             base.HandleMessage(message);
 
+            int size = message.Content.ReadableBytes;
             switch (message.PacketType)
             {
                 case Eth63MessageCode.GetReceipts:
-                    Interlocked.Increment(ref _counter);
-                    if(Logger.IsTrace) Logger.Trace($"{_counter:D5} GetReceipts from {Node:c}");
+                    if (NetworkDiagTracer.IsEnabled) NetworkDiagTracer.ReportIncomingMessage(Session.Node.Host, Name, nameof(GetReceiptsMessage));
+                    Interlocked.Increment(ref Counter);
+                    if (Logger.IsTrace) Logger.Trace($"{Counter:D5} GetReceipts from {Node:c}");
                     Metrics.Eth63GetReceiptsReceived++;
                     Handle(Deserialize<GetReceiptsMessage>(message.Content));
                     break;
                 case Eth63MessageCode.Receipts:
-                    Interlocked.Increment(ref _counter);
-                    if(Logger.IsTrace) Logger.Trace($"{_counter:D5} Receipts from {Node:c}");
+                    if (NetworkDiagTracer.IsEnabled) NetworkDiagTracer.ReportIncomingMessage(Session.Node.Host, Name, nameof(ReceiptsMessage));
+                    Interlocked.Increment(ref Counter);
+                    if (Logger.IsTrace) Logger.Trace($"{Counter:D5} Receipts from {Node:c}");
                     Metrics.Eth63ReceiptsReceived++;
-                    Handle(Deserialize<ReceiptsMessage>(message.Content));
+                    Handle(Deserialize<ReceiptsMessage>(message.Content), size);
                     break;
                 case Eth63MessageCode.GetNodeData:
-                    Interlocked.Increment(ref _counter);
-                    if(Logger.IsTrace) Logger.Trace($"{_counter:D5} GetNodeData from {Node:c}");
+                    if (NetworkDiagTracer.IsEnabled) NetworkDiagTracer.ReportIncomingMessage(Session.Node.Host, Name, nameof(GetNodeDataMessage));
+                    Interlocked.Increment(ref Counter);
+                    if (Logger.IsTrace) Logger.Trace($"{Counter:D5} GetNodeData from {Node:c}");
                     Metrics.Eth63GetNodeDataReceived++;
                     Handle(Deserialize<GetNodeDataMessage>(message.Content));
                     break;
                 case Eth63MessageCode.NodeData:
-                    Interlocked.Increment(ref _counter);
-                    if(Logger.IsTrace) Logger.Trace($"{_counter:D5} NodeData from {Node:c}");
+                    if (NetworkDiagTracer.IsEnabled) NetworkDiagTracer.ReportIncomingMessage(Session.Node.Host, Name, nameof(NodeDataMessage));
+                    Interlocked.Increment(ref Counter);
+                    if (Logger.IsTrace) Logger.Trace($"{Counter:D5} NodeData from {Node:c}");
                     Metrics.Eth63NodeDataReceived++;
-                    Handle(Deserialize<NodeDataMessage>(message.Content));
+                    Handle(Deserialize<NodeDataMessage>(message.Content), size);
                     break;
             }
         }
 
+        public override string Name => "eth63";
+
         private void Handle(GetReceiptsMessage msg)
         {
+            if (msg.BlockHashes.Count > 512)
+            {
+                throw new EthSynchronizationException("Incoming receipts request for more than 512 blocks");
+            }
+            
             Stopwatch stopwatch = Stopwatch.StartNew();
             TxReceipt[][] txReceipts = SyncServer.GetReceipts(msg.BlockHashes);
-            Interlocked.Increment(ref _counter);
+            Interlocked.Increment(ref Counter);
             Send(new ReceiptsMessage(txReceipts));
             stopwatch.Stop();
-            if(Logger.IsTrace) Logger.Trace($"OUT {_counter:D5} Receipts to {Node:c} in {stopwatch.Elapsed.TotalMilliseconds}ms");
+            if (Logger.IsTrace) Logger.Trace($"OUT {Counter:D5} Receipts to {Node:c} in {stopwatch.Elapsed.TotalMilliseconds}ms");
         }
 
-        private void Handle(ReceiptsMessage msg)
+        private void Handle(ReceiptsMessage msg, long size)
         {
-            var request = _receiptsRequests.Take();
+            Request<GetReceiptsMessage, TxReceipt[][]> request = _receiptsRequests.Take();
             if (IsRequestMatched(request, msg))
             {
+                request.ResponseSize = size;
                 request.CompletionSource.SetResult(msg.TxReceipts);
             }
         }
 
         private void Handle(GetNodeDataMessage msg)
         {
+            if (msg.Keys.Count > 4096)
+            {
+                throw new EthSynchronizationException("Incoming node data request for more than 4096 nodes");
+            }
+
             Stopwatch stopwatch = Stopwatch.StartNew();
             byte[][] nodeData = SyncServer.GetNodeData(msg.Keys);
-            Interlocked.Increment(ref _counter);
+            Interlocked.Increment(ref Counter);
             Send(new NodeDataMessage(nodeData));
             stopwatch.Stop();
-            if(Logger.IsTrace) Logger.Trace($"OUT {_counter:D5} NodeData to {Node:c} in {stopwatch.Elapsed.TotalMilliseconds}ms");
+            if (Logger.IsTrace) Logger.Trace($"OUT {Counter:D5} NodeData to {Node:c} in {stopwatch.Elapsed.TotalMilliseconds}ms");
         }
 
-        private void Handle(NodeDataMessage msg)
+        private void Handle(NodeDataMessage msg, int size)
         {
-            var request = _nodeDataRequests.Take();
+            Request<GetNodeDataMessage, byte[][]> request = _nodeDataRequests.Take();
+            request.ResponseSize = size;
             if (IsRequestMatched(request, msg))
             {
                 request.CompletionSource.SetResult(msg.Data);
             }
         }
 
-        public override async Task<byte[][]> GetNodeData(Keccak[] keys, CancellationToken token)
+        public override async Task<byte[][]> GetNodeData(IList<Keccak> keys, CancellationToken token)
         {
-            if (keys.Length == 0)
+            if (keys.Count == 0)
             {
-                return new byte[0][];
+                return Array.Empty<byte[]>();
             }
-            
-            var msg = new GetNodeDataMessage(keys);
+
+            GetNodeDataMessage msg = new GetNodeDataMessage(keys);
             byte[][] receipts = await SendRequest(msg, token);
             return receipts;
         }
-        
-        public override async Task<TxReceipt[][]> GetReceipts(Keccak[] blockHashes, CancellationToken token)
+
+        public override async Task<TxReceipt[][]> GetReceipts(IList<Keccak> blockHashes, CancellationToken token)
         {
-            if (blockHashes.Length == 0)
+            if (blockHashes.Count == 0)
             {
-                return new TxReceipt[0][];
+                return Array.Empty<TxReceipt[]>();
             }
-            
-            var msg = new GetReceiptsMessage(blockHashes);
+
+            // Logger.Info($"Sending receipts request ({blockHashes.Count}) to {this}");
+
+            GetReceiptsMessage msg = new GetReceiptsMessage(blockHashes);
             TxReceipt[][] txReceipts = await SendRequest(msg, token);
+
+            // Logger.Info($"Sent receipts request ({blockHashes.Count}) to {this} - received {txReceipts.Length}");
             return txReceipts;
         }
 
@@ -157,20 +176,19 @@ namespace Nethermind.Network.P2P.Subprotocols.Eth.V63
             if (Logger.IsTrace)
             {
                 Logger.Trace("Sending node fata request:");
-                Logger.Trace($"Keys count: {message.Keys.Length}");
+                Logger.Trace($"Keys count: {message.Keys.Count}");
             }
 
-            var request = new Request<GetNodeDataMessage, byte[][]>(message);
+            Request<GetNodeDataMessage, byte[][]> request = new Request<GetNodeDataMessage, byte[][]>(message);
+            request.StartMeasuringTime();
             _nodeDataRequests.Add(request, token);
-
-            var perfCalcId = _perfService.StartPerfCalc();
 
             Send(request.Message);
             Task<byte[][]> task = request.CompletionSource.Task;
-            
-            CancellationTokenSource delayCancellation = new CancellationTokenSource();
-            CancellationTokenSource compositeCancellation = CancellationTokenSource.CreateLinkedTokenSource(token, delayCancellation.Token);
-            var firstTask = await Task.WhenAny(task, Task.Delay(Timeouts.Eth, compositeCancellation.Token));
+
+            using CancellationTokenSource delayCancellation = new CancellationTokenSource();
+            using CancellationTokenSource compositeCancellation = CancellationTokenSource.CreateLinkedTokenSource(token, delayCancellation.Token);
+            Task firstTask = await Task.WhenAny(task, Task.Delay(Timeouts.Eth, compositeCancellation.Token));
             if (firstTask.IsCanceled)
             {
                 token.ThrowIfCancellationRequested();
@@ -179,39 +197,37 @@ namespace Nethermind.Network.P2P.Subprotocols.Eth.V63
             if (firstTask == task)
             {
                 delayCancellation.Cancel();
-                var latency = _perfService.EndPerfCalc(perfCalcId);
-                if (latency.HasValue)
-                {
-                    // block headers here / ok
-                    StatsManager.ReportLatencyCaptureEvent(Session.Node, NodeLatencyStatType.BlockHeaders, latency.Value);
-                }
+                long elapsed = request.FinishMeasuringTime();
+                long bytesPerMillisecond = (long) ((decimal) request.ResponseSize / Math.Max(1, elapsed));
+                if (Logger.IsTrace) Logger.Trace($"{this} speed is {request.ResponseSize}/{elapsed} = {bytesPerMillisecond}");
+                StatsManager.ReportTransferSpeedEvent(Session.Node, bytesPerMillisecond);
 
                 return task.Result;
             }
-            
-            StatsManager.ReportLatencyCaptureEvent(Session.Node, NodeLatencyStatType.BlockHeaders, (long)Timeouts.Eth.TotalMilliseconds);
-            _perfService.EndPerfCalc(perfCalcId);
+
+            StatsManager.ReportTransferSpeedEvent(Session.Node, 0L);
             throw new TimeoutException($"{Session} Request timeout in {nameof(GetNodeDataMessage)}");
         }
-        
+
         [Todo(Improve.Refactor, "Generic approach to requests")]
         private async Task<TxReceipt[][]> SendRequest(GetReceiptsMessage message, CancellationToken token)
         {
             if (Logger.IsTrace)
             {
                 Logger.Trace("Sending node fata request:");
-                Logger.Trace($"Hashes count: {message.BlockHashes.Length}");
+                Logger.Trace($"Hashes count: {message.BlockHashes.Count}");
             }
 
-            var request = new Request<GetReceiptsMessage, TxReceipt[][]>(message);
+            Request<GetReceiptsMessage, TxReceipt[][]> request = new Request<GetReceiptsMessage, TxReceipt[][]>(message);
+            request.StartMeasuringTime();
             _receiptsRequests.Add(request, token);
 
             Send(request.Message);
 
             Task<TxReceipt[][]> task = request.CompletionSource.Task;
-            CancellationTokenSource delayCancellation = new CancellationTokenSource();
-            CancellationTokenSource compositeCancellation = CancellationTokenSource.CreateLinkedTokenSource(token, delayCancellation.Token);
-            var firstTask = await Task.WhenAny(task, Task.Delay(Timeouts.Eth, compositeCancellation.Token));
+            using CancellationTokenSource delayCancellation = new CancellationTokenSource();
+            using CancellationTokenSource compositeCancellation = CancellationTokenSource.CreateLinkedTokenSource(token, delayCancellation.Token);
+            Task firstTask = await Task.WhenAny(task, Task.Delay(Timeouts.Eth, compositeCancellation.Token));
             if (firstTask.IsCanceled)
             {
                 token.ThrowIfCancellationRequested();
@@ -220,12 +236,19 @@ namespace Nethermind.Network.P2P.Subprotocols.Eth.V63
             if (firstTask == task)
             {
                 delayCancellation.Cancel();
+                long elapsed = request.FinishMeasuringTime();
+                long bytesPerMillisecond = (long) ((decimal) request.ResponseSize / Math.Max(1, elapsed));
+                if (Logger.IsTrace) Logger.Trace($"{this} speed is {request.ResponseSize}/{elapsed} = {bytesPerMillisecond}");
+                StatsManager.ReportTransferSpeedEvent(Session.Node, bytesPerMillisecond);
+
                 return task.Result;
             }
 
+            StatsManager.ReportTransferSpeedEvent(Session.Node, 0L);
+
             throw new TimeoutException($"{Session} Request timeout in {nameof(GetReceiptsMessage)}");
         }
-        
+
         [Todo(Improve.MissingFunctionality, "Need to compare response")]
         private bool IsRequestMatched(
             Request<GetNodeDataMessage, byte[][]> request,

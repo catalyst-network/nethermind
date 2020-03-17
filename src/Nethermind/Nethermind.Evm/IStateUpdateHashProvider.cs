@@ -29,4 +29,12 @@ namespace Nethermind.Evm
     {
         byte[] GetHash(StateUpdate currentStateUpdate, in long number);
     }
+    
+    /// <summary>
+    /// For the given block it executes a lookup of a blockhash up to 256 predecessors.
+    /// </summary>
+    public interface IBlockhashProvider : IStateUpdateHashProvider
+    {
+        Keccak GetBlockhash(BlockHeader currentStateUpdate, in long number);
+    }
 }

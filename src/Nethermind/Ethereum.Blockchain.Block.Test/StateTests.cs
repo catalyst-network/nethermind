@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Ethereum.Test.Base;
 using Nethermind.Core;
+using Nethermind.Core.Attributes;
 using NUnit.Framework;
 
 namespace Ethereum.Blockchain.Block.Test
@@ -32,6 +33,13 @@ namespace Ethereum.Blockchain.Block.Test
         [TestCaseSource(nameof(LoadTests))]
         public async Task Test(LegacyBlockchainTest test)
         {
+            if (test.Name.Contains("randomStatetest94"))
+            {
+                // test has unreasonable amount of gas assigned to the block
+                // it passes but causes the builds to take half an hour
+                return;
+            }
+            
             if (test.Name.Contains("suicideStorage"))
             {
                 return;

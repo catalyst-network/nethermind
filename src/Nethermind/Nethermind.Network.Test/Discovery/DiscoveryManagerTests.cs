@@ -1,20 +1,18 @@
-﻿/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+﻿//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System.Linq;
 using System.Net;
@@ -22,6 +20,7 @@ using System.Threading;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
 using Nethermind.Core.Test.Builders;
+using Nethermind.Crypto;
 using Nethermind.Db;
 using Nethermind.Logging;
 using Nethermind.Network.Config;
@@ -58,7 +57,7 @@ namespace Nethermind.Network.Test.Discovery
             NetworkNodeDecoder.Init();
             var privateKey = new PrivateKey(TestPrivateKeyHex);
             _publicKey = privateKey.PublicKey;
-            var logManager = NullLogManager.Instance;
+            var logManager = LimboLogs.Instance;
 
             IDiscoveryConfig discoveryConfig = new DiscoveryConfig();
             discoveryConfig.PongTimeout = 100;
@@ -86,7 +85,7 @@ namespace Nethermind.Network.Test.Discovery
             _discoveryManager.MessageSender = _messageSender;
         }
 
-        [Test]
+        [Test, Retry(3)]
         public void OnPingMessageTest()
         {
             //receiving ping
@@ -101,7 +100,7 @@ namespace Nethermind.Network.Test.Discovery
             _messageSender.Received(3).SendMessage(Arg.Is<PingMessage>(m => m.FarAddress.Address.ToString() == _host && m.FarAddress.Port == _port));
         }
 
-        [Test]
+        [Test, Retry(3)]
         public void OnPongMessageTest()
         {
             //receiving pong
@@ -117,7 +116,7 @@ namespace Nethermind.Network.Test.Discovery
             Assert.AreEqual(NodeLifecycleState.Active, manager.State);
         }
 
-        [Test]
+        [Test, Retry(3)]
         public void OnFindNodeMessageTest()
         {
             //receiving pong to have a node in the system
@@ -139,7 +138,7 @@ namespace Nethermind.Network.Test.Discovery
             _messageSender.Received(1).SendMessage(Arg.Is<NeighborsMessage>(m => m.FarAddress.Address.ToString() == _host && m.FarAddress.Port == _port));
         }
 
-        [Test]
+        [Test, Retry(3)]
         public void OnNeighborsMessageTest()
         {
             //receiving pong to have a node in the system

@@ -1,20 +1,18 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System.Collections.Generic;
 using System.Linq;
@@ -26,8 +24,8 @@ namespace Nethermind.Blockchain.Filters
     {
         public static AddressFilter AnyAddress = new AddressFilter((Address)null);
         
-        private Bloom.BloomExtract[] _addressesBloomIndexes;
-        private Bloom.BloomExtract? _addressBloomExtract;
+        private Core.Bloom.BloomExtract[] _addressesBloomIndexes;
+        private Core.Bloom.BloomExtract? _addressBloomExtract;
         
         public AddressFilter(Address address)
         {
@@ -41,8 +39,8 @@ namespace Nethermind.Blockchain.Filters
         
         public Address Address { get; set; }
         public HashSet<Address> Addresses { get; set; }
-        private Bloom.BloomExtract[] AddressesBloomExtracts => _addressesBloomIndexes ?? (_addressesBloomIndexes = CalculateBloomExtracts());
-        private Bloom.BloomExtract AddressBloomExtract => (_addressBloomExtract ?? (_addressBloomExtract = Bloom.GetExtract(Address))).Value;
+        private Core.Bloom.BloomExtract[] AddressesBloomExtracts => _addressesBloomIndexes ??= CalculateBloomExtracts();
+        private Core.Bloom.BloomExtract AddressBloomExtract => _addressBloomExtract ??= Core.Bloom.GetExtract(Address);
 
         public bool Accepts(Address address)
         {
@@ -54,7 +52,7 @@ namespace Nethermind.Blockchain.Filters
             return Address == null || Address == address;
         }
 
-        public bool Matches(Bloom bloom)
+        public bool Matches(Core.Bloom bloom)
         {
             if (Addresses != null)
             {
@@ -82,6 +80,6 @@ namespace Nethermind.Blockchain.Filters
             }
         }
 
-        private Bloom.BloomExtract[] CalculateBloomExtracts() => Addresses.Select(Bloom.GetExtract).ToArray();
+        private Core.Bloom.BloomExtract[] CalculateBloomExtracts() => Addresses.Select(Core.Bloom.GetExtract).ToArray();
     }
 }

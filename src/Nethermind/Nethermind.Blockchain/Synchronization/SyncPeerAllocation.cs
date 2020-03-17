@@ -1,84 +1,72 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+﻿//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using Nethermind.Stats;
 
 namespace Nethermind.Blockchain.Synchronization
-{   
+{
     public class SyncPeerAllocation
     {
-        private static object _allocationLock = new object(); // why is it static? better do not touch
-        
-        public long? MinBlocksAhead { get; set; }
-        public bool CanBeReplaced { get; set; } = true;
-        public string Description { get; }
+        public static SyncPeerAllocation FailedAllocation = new SyncPeerAllocation(NullStrategy.Instance);
+
+        /// <summary>
+        /// this should be used whenever we change IsAllocated property on PeerInfo-
+        /// </summary>
+        private static object _allocationLock = new object();
+
+        private IPeerSelectionStrategy _peerSelectionStrategy;
+        private string Description => _peerSelectionStrategy.Name;
         public PeerInfo Current { get; private set; }
 
-        public SyncPeerAllocation(PeerInfo initialPeer, string description)
-        {
-            lock (_allocationLock)
-            {
-                if (!initialPeer.IsAllocated)
-                {
-                    initialPeer.IsAllocated = true;
-                    Current = initialPeer;
-                }
-            }
+        public bool HasPeer => Current != null;
 
-            Description = description;
+        public SyncPeerAllocation(IPeerSelectionStrategy peerSelectionStrategy)
+        {
+            _peerSelectionStrategy = peerSelectionStrategy;
         }
 
-        public SyncPeerAllocation(string description)
+        public void AllocateBestPeer(IEnumerable<PeerInfo> peers, INodeStatsManager nodeStatsManager, IBlockTree blockTree, string reason)
         {
-            Description = description;
-        }
-
-        public void ReplaceCurrent(PeerInfo betterPeer)
-        {
-            if (betterPeer == null)
+            PeerInfo current = Current;
+            PeerInfo selected = _peerSelectionStrategy.Select(Current, peers, nodeStatsManager, blockTree);
+            if (selected == current)
             {
-                throw new ArgumentNullException(nameof(betterPeer));
+                return;
             }
 
-            AllocationChangeEventArgs args;
+            AllocationChangeEventArgs args = null;
             lock (_allocationLock)
             {
-                PeerInfo current = Current;
-                if (current != null && !CanBeReplaced)
+                if (selected.IsAllocated)
                 {
-                    return;
-                }
-                
-                if (betterPeer.IsAllocated)
-                {
-                    return;
+                    throw new InvalidAsynchronousStateException("Selected an already allocated peer");
                 }
 
-                betterPeer.IsAllocated = true;
+                selected.IsAllocated = true;
+                Current = selected;
+                args = new AllocationChangeEventArgs(current, selected);
                 if (current != null)
                 {
                     current.IsAllocated = false;
                 }
-
-                args = new AllocationChangeEventArgs(current, betterPeer);
-                Current = betterPeer;
             }
-
+            
             Replaced?.Invoke(this, args);
         }
 
@@ -97,7 +85,7 @@ namespace Nethermind.Blockchain.Synchronization
             {
                 return;
             }
-            
+
             lock (_allocationLock)
             {
                 current.IsAllocated = false;
@@ -117,21 +105,6 @@ namespace Nethermind.Blockchain.Synchronization
         public override string ToString()
         {
             return string.Concat("[Allocation|", Description, "]");
-        }
-
-        public void FinishSync()
-        {
-            PeerInfo current = Current;
-            if (current == null)
-            {
-                return;
-            }
-            
-            lock (_allocationLock)
-            {
-                current.IsAllocated = false;
-                Current = null;
-            }
         }
     }
 }

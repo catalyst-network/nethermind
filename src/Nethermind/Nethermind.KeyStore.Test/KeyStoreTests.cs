@@ -1,33 +1,31 @@
-﻿/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+﻿//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security;
+using FluentAssertions;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
 using Nethermind.Core.Extensions;
-using Nethermind.Core.Json;
-using Nethermind.Core.Model;
+using Nethermind.Crypto;
 using Nethermind.KeyStore.Config;
 using Nethermind.Logging;
+using Nethermind.Serialization.Json;
 using NUnit.Framework;
 
 namespace Nethermind.KeyStore.Test
@@ -60,7 +58,7 @@ namespace Nethermind.KeyStore.Test
             _testPasswordSecured.MakeReadOnly();
             _wrongPasswordSecured.MakeReadOnly();
 
-            ILogManager logger = NullLogManager.Instance;
+            ILogManager logger = LimboLogs.Instance;
             _serializer = new EthereumJsonSerializer();
             _cryptoRandom = new CryptoRandom();
             _store = new FileKeyStore(_keyStoreConfig, _serializer, new AesEncrypter(_keyStoreConfig, logger), _cryptoRandom, logger);
@@ -241,6 +239,22 @@ namespace Nethermind.KeyStore.Test
 
             Result deleteResult = _store.DeleteKey(key.Address);
             Assert.AreEqual(ResultType.Success, deleteResult.ResultType);
+        }
+
+        [Test]
+        public void ShouldSaveFileWithoutBom()
+        {
+            const string bomBytesHex = "efbbbf";
+            const string validBytesHex = "7b2276";
+            var (key, _) = _store.GenerateKey(_testPasswordSecured);
+            var directory = _keyStoreConfig.KeyStoreDirectory.GetApplicationResourcePath();
+            var addressHex = key.Address.ToString(false, false);
+            var file = Directory.GetFiles(directory).SingleOrDefault(f => f.Contains(addressHex));
+            var bytes = File.ReadAllBytes(file);
+            _store.DeleteKey(key.Address);
+            var bytesHex = bytes.ToHexString();
+            bytesHex.Should().NotStartWith(bomBytesHex);
+            bytesHex.Should().StartWith(validBytesHex);
         }
     }
 }

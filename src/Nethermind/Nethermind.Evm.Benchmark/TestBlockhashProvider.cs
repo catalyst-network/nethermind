@@ -19,11 +19,11 @@ using Nethermind.Core.Crypto;
 
 namespace Nethermind.Evm.Benchmark
 {
-    public class TestBlockhashProvider : IBlockhashProvider
+    public class TestBlockhashProvider : IStateUpdateHashProvider
     {
-        public Keccak GetBlockhash(BlockHeader currentBlock, in long number)
+        public byte[] GetHash(StateUpdate currentBlock, in long number)
         {
-            return Keccak.Compute(number.ToString());
+            return Keccak.Compute(number.ToString()).Bytes;
         }
     }
 }

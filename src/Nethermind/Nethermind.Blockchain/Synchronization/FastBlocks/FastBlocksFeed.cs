@@ -1,20 +1,18 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Collections.Concurrent;
@@ -23,23 +21,26 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Nethermind.Blockchain.Find;
 using Nethermind.Blockchain.Receipts;
+using Nethermind.Blockchain.Synchronization.SyncLimits;
 using Nethermind.Blockchain.Validators;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
-using Nethermind.Core.Json;
 using Nethermind.Core.Specs;
 using Nethermind.Dirichlet.Numerics;
 using Nethermind.Logging;
+using Nethermind.Serialization.Json;
+using Nethermind.State.Proofs;
 
 // ReSharper disable InconsistentlySynchronizedField
 namespace Nethermind.Blockchain.Synchronization.FastBlocks
 {
     public class FastBlocksFeed : IFastBlocksFeed
     {
-        private const int BodiesRequestSize = 512;
-        private const int HeadersRequestSize = 512;
-        private const int ReceiptsRequestStats = 256;
+        private int BodiesRequestSize = GethSyncLimits.MaxBodyFetch;
+        private int HeadersRequestSize = GethSyncLimits.MaxHeaderFetch;
+        private int ReceiptsRequestSize = GethSyncLimits.MaxReceiptFetch;
 
         private ILogger _logger;
         private readonly ISpecProvider _specProvider;
@@ -93,6 +94,13 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
             _syncPeerPool = syncPeerPool ?? throw new ArgumentNullException(nameof(syncPeerPool));
             _syncConfig = syncConfig ?? throw new ArgumentNullException(nameof(syncConfig));
             _syncReport = syncReport ?? throw new ArgumentNullException(nameof(syncReport));
+
+            if (!_syncConfig.UseGethLimitsInFastBlocks)
+            {
+                BodiesRequestSize = NethermindSyncLimits.MaxBodyFetch;
+                HeadersRequestSize = NethermindSyncLimits.MaxHeaderFetch;
+                ReceiptsRequestSize = NethermindSyncLimits.MaxReceiptFetch;
+            }
         }
 
         private bool _isMoreLikelyToBeHandlingDependenciesNow;
@@ -244,7 +252,7 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
                             predecessorBlock = null;
                         }
 
-                        int requestSize = (int) Math.Min(block.Number, ReceiptsRequestStats);
+                        int requestSize = (int) Math.Min(block.Number, ReceiptsRequestSize);
                         batch = new FastBlocksBatch();
                         batch.Receipts = new ReceiptsSyncBatch();
                         batch.Receipts.Predecessors = new long?[requestSize];
@@ -286,6 +294,15 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
                             Array.Copy(currentRequests, 0, batch.Receipts.Request, 0, collectedRequests);
                             batch.Receipts.IsFinal = true;
                         }
+                        
+                        if (collectedRequests == 0 && (block?.IsGenesis ?? true))
+                        {
+                            // special finishing call
+                            // leaving this the bad way as it may be tricky to confirm that it is not called somewhere else
+                            // at least I will add a test for it now...
+                            _receiptStorage.Insert(1, null);
+                            return null;
+                        }
 
                         break;
                     }
@@ -307,6 +324,15 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
 
         private FastBlocksBatchType ResolveBatchType()
         {
+            if (_syncConfig.BeamSync && _blockTree.LowestInsertedHeader != null)
+            {
+                // we just need a pivot header and can go up then
+                _syncReport.FastBlocksHeaders.Update(_pivotNumber);
+                _syncReport.FastBlocksHeaders.MarkEnd();
+                _headerDependencies.Clear();
+                return FastBlocksBatchType.None;
+            }
+            
             bool headersDownloaded = (_blockTree.LowestInsertedHeader?.Number ?? 0) == 1;
             bool bodiesDownloaded = (_blockTree.LowestInsertedBody?.Number ?? 0) == 1;
             bool receiptsDownloaded = _receiptStorage.LowestInsertedReceiptBlock == 1;
@@ -321,13 +347,13 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
             _syncReport.FastBlocksHeaders.Update(_pivotNumber);
             _syncReport.FastBlocksHeaders.MarkEnd();
 
-            if (!bodiesDownloaded  && _syncConfig.DownloadBodiesInFastSync)
+            if (!bodiesDownloaded && _syncConfig.DownloadBodiesInFastSync)
             {
                 return _lowestRequestedBodyHash == _blockTree.Genesis.Hash
                     ? FastBlocksBatchType.None
                     : FastBlocksBatchType.Bodies;
             }
-            
+
             _syncReport.FastBlocksBodies.Update(_pivotNumber);
             _syncReport.FastBlocksBodies.MarkEnd();
 
@@ -338,7 +364,7 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
                     ? FastBlocksBatchType.None
                     : FastBlocksBatchType.Receipts;
             }
-            
+
             _syncReport.FastBlocksReceipts.Update(_pivotNumber);
             _syncReport.FastBlocksReceipts.MarkEnd();
 
@@ -533,11 +559,11 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
 
                 if (!wasInvalid)
                 {
-                    Keccak receiptsRoot = block.CalculateReceiptRoot(_specProvider, blockReceipts);
+                    Keccak receiptsRoot = new ReceiptTrie(block.Number, _specProvider, blockReceipts).RootHash;
                     if (receiptsRoot != block.ReceiptsRoot)
                     {
                         if (_logger.IsWarn) _logger.Warn($"{batch} - invalid receipt root");
-                        _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource);
+                        _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource, "invalid receipts root");
                         wasInvalid = true;
                     }
                 }
@@ -590,16 +616,14 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
 
                 if (_logger.IsDebug) _logger.Debug($"LOWEST_INSERTED {_receiptStorage.LowestInsertedReceiptBlock} | HANDLED {batch}");
 
+                _syncReport.ReceiptsInQueue.Update(_receiptDependencies.Sum(d => d.Value.Count));
                 return added;
             }
         }
 
         private void InsertReceipts(List<(long, TxReceipt)> receipts)
         {
-            foreach ((long blockNumber, TxReceipt receipt) in receipts)
-            {
-                _receiptStorage.Insert(blockNumber, receipt);
-            }
+            _receiptStorage.Insert(receipts);
         }
 
         private static FastBlocksBatch PrepareReceiptFiller(int added, ReceiptsSyncBatch receiptsSyncBatch)
@@ -635,11 +659,11 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
                 }
 
                 Block block = new Block(bodiesSyncBatch.Headers[i], blockBody.Transactions, blockBody.Ommers);
-                if (block.CalculateTxRoot() != block.TransactionsRoot ||
-                    block.CalculateOmmersHash() != block.OmmersHash)
+                if (new TxTrie(block.Transactions).RootHash != block.TxRoot ||
+                    OmmersHash.Calculate(block) != block.OmmersHash)
                 {
                     if (_logger.IsWarn) _logger.Warn($"{batch} - reporting INVALID - tx or ommers");
-                    _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource);
+                    _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource, $"invalid tx or ommers root");
                     break;
                 }
 
@@ -689,6 +713,7 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
 
             if (_logger.IsDebug) _logger.Debug($"LOWEST_INSERTED {_blockTree.LowestInsertedBody?.Number} | HANDLED {batch}");
 
+            _syncReport.BodiesInQueue.Update(_bodiesDependencies.Sum(d => d.Value.Count));
             return validResponsesCount;
         }
 
@@ -699,6 +724,11 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
 
         public void StartNewRound()
         {
+            if (!_syncConfig.FastBlocks)
+            {
+                throw new InvalidOperationException("Entered fast blocks mode without fast blocks enabled in configuration.");
+            }
+            
             _pivotNumber = LongConverter.FromString(_syncConfig.PivotNumber ?? "0x0");
             _pivotHash = _syncConfig.PivotHash == null ? null : new Keccak(_syncConfig.PivotHash);
             _pivotDifficulty = UInt256.Parse(_syncConfig.PivotTotalDifficulty ?? "0x0");
@@ -731,7 +761,7 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
             if (headersSyncBatch.Response.Length > batch.Headers.RequestSize)
             {
                 if (_logger.IsWarn) _logger.Warn($"Peer sent too long response ({headersSyncBatch.Response.Length}) to {batch}");
-                _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource);
+                _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource, $"response too long ({headersSyncBatch.Response.Length})");
                 _pendingBatches.Push(batch);
                 return 0;
             }
@@ -753,7 +783,7 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
 
                 if (header.Number != headersSyncBatch.StartNumber + i)
                 {
-                    _syncPeerPool.ReportInvalid(batch.Allocation);
+                    _syncPeerPool.ReportInvalid(batch.Allocation, "inconsistent headers batch");
                     break;
                 }
 
@@ -767,7 +797,7 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
                         if (batch.Allocation != null)
                         {
                             if (_logger.IsWarn) _logger.Warn($"{batch} - reporting INVALID hash");
-                            _syncPeerPool.ReportInvalid(batch.Allocation);
+                            _syncPeerPool.ReportInvalid(batch.Allocation, "first hash inconsistent with request");
                         }
 
                         break;
@@ -778,15 +808,15 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
                     {
                         if (header.Number == (_blockTree.LowestInsertedHeader?.Number ?? _pivotNumber + 1) - 1)
                         {
-                            if (_logger.IsWarn) _logger.Warn($"{batch} - ended up IGNORED - different branch");
-                            _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource);
+                            if (_logger.IsDebug) _logger.Debug($"{batch} - ended up IGNORED - different branch - number {header.Number} was {header.Hash} while expected {_nextHeaderHash}");
+                            _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource, "headers - different branch");
                             break;
                         }
 
                         if (header.Number == _blockTree.LowestInsertedHeader?.Number)
                         {
-                            if (_logger.IsWarn) _logger.Warn($"{batch} - ended up IGNORED - different branch");
-                            _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource);
+                            if (_logger.IsDebug) _logger.Debug($"{batch} - ended up IGNORED - different branch");
+                            _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource, "headers - different branch");
                             break;
                         }
 
@@ -825,7 +855,7 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
                         if (batch.Allocation != null)
                         {
                             if (_logger.IsWarn) _logger.Warn($"{batch} - reporting INVALID inconsistent");
-                            _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource);
+                            _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource, "headers - response not matching request");
                         }
 
                         break;
@@ -839,7 +869,7 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
                     if (batch.Allocation != null)
                     {
                         if (_logger.IsWarn) _logger.Warn($"{batch} - reporting INVALID bad block");
-                        _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource);
+                        _syncPeerPool.ReportInvalid(batch.Allocation?.Current ?? batch.OriginalDataSource, $"invalid header {header.ToString(BlockHeader.Format.Short)}");
                     }
 
                     break;
@@ -854,7 +884,7 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
             int rightFillerSize = (int) (batch.Headers.EndNumber - addedLast);
             if (added + leftFillerSize + rightFillerSize != batch.Headers.RequestSize)
             {
-                throw new Exception($"Added {added} + left {leftFillerSize} + right {rightFillerSize} != request size {batch.Headers.RequestSize} in  {batch}");
+                throw new Exception($"Added {added} + left {leftFillerSize} + right {rightFillerSize} != request size {batch.Headers.RequestSize} in {batch}");
             }
 
             added = Math.Max(0, added);
@@ -886,7 +916,7 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
 
             if (added == 0)
             {
-                if (_logger.IsWarn) _logger.Warn($"{batch} - reporting no progress");
+                if (_logger.IsDebug) _logger.Debug($"{batch} - reporting no progress");
                 if (batch.Allocation != null)
                 {
                     _syncPeerPool.ReportNoSyncProgress(batch.Allocation);
@@ -905,6 +935,7 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
 
             if (_logger.IsDebug) _logger.Debug($"LOWEST_INSERTED {_blockTree.LowestInsertedHeader?.Number} | HANDLED {batch}");
 
+            _syncReport.HeadersInQueue.Update(_headerDependencies.Sum(hd => hd.Value.Headers.Response.Length));
             return added;
         }
 
@@ -984,7 +1015,7 @@ namespace Nethermind.Blockchain.Synchronization.FastBlocks
                     InsertHeaders(batch);
                 }
             }
-
+            
             return addBlockResult;
         }
     }

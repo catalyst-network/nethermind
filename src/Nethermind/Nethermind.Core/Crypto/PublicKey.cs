@@ -1,24 +1,24 @@
-﻿/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+﻿//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Nethermind.Core;
+using Nethermind.Core.Crypto;
 using Nethermind.Core.Extensions;
 
 namespace Nethermind.Core.Crypto
@@ -32,7 +32,7 @@ namespace Nethermind.Core.Crypto
         private byte[] _prefixedBytes;
 
         public PublicKey(string hexString)
-            : this(Extensions.Bytes.FromHexString(hexString))
+            : this(Core.Extensions.Bytes.FromHexString(hexString))
         {
         }
         
@@ -55,10 +55,21 @@ namespace Nethermind.Core.Crypto
                     $"Expected prefix of 0x04 for {PublicKeyWithPrefixLengthInBytes} bytes long {nameof(PublicKey)}");
             }
 
-            Bytes = bytes.Slice(bytes.Length - 64, 64);
+            Bytes = bytes.Length == 64 ? bytes : bytes.Slice(bytes.Length - 64, 64);
         }
 
-        public Address Address => LazyInitializer.EnsureInitialized(ref _address, ComputeAddress);
+        public Address Address
+        {
+            get
+            {
+                if (_address == null)
+                {
+                    LazyInitializer.EnsureInitialized(ref _address, ComputeAddress);
+                }
+
+                return _address;
+            }   
+        }
 
         public byte[] Bytes { get; }
 
@@ -66,8 +77,13 @@ namespace Nethermind.Core.Crypto
         {
             get
             {
-                return LazyInitializer.EnsureInitialized(ref _prefixedBytes,
-                    () => Extensions.Bytes.Concat(0x04, Bytes));
+                if (_prefixedBytes == null)
+                {
+                    return LazyInitializer.EnsureInitialized(ref _prefixedBytes,
+                        () => Core.Extensions.Bytes.Concat(0x04, Bytes));
+                }
+
+                return _prefixedBytes;
             }
         }
 
@@ -78,7 +94,7 @@ namespace Nethermind.Core.Crypto
                 return false;
             }
 
-            return Extensions.Bytes.AreEqual(Bytes, other.Bytes);
+            return Core.Extensions.Bytes.AreEqual(Bytes, other.Bytes);
         }
         
         private Address ComputeAddress()
@@ -125,7 +141,7 @@ namespace Nethermind.Core.Crypto
                 return false;
             }
 
-            return Extensions.Bytes.AreEqual(a.Bytes, b.Bytes);
+            return Core.Extensions.Bytes.AreEqual(a.Bytes, b.Bytes);
         }
 
         public static bool operator !=(PublicKey a, PublicKey b)

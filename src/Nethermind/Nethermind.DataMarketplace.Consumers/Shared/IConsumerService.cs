@@ -1,20 +1,18 @@
-/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -26,6 +24,7 @@ using Nethermind.DataMarketplace.Consumers.Deposits.Queries;
 using Nethermind.DataMarketplace.Consumers.Providers.Domain;
 using Nethermind.DataMarketplace.Consumers.Sessions.Domain;
 using Nethermind.DataMarketplace.Core.Domain;
+using Nethermind.DataMarketplace.Core.Services.Models;
 using Nethermind.Dirichlet.Numerics;
 
 namespace Nethermind.DataMarketplace.Consumers.Shared
@@ -54,9 +53,9 @@ namespace Nethermind.DataMarketplace.Consumers.Shared
         
         #region DataStreams
         
-        Task<Keccak> EnableDataStreamAsync(Keccak depositId, string client, string[] args);
-        Task<Keccak> DisableDataStreamAsync(Keccak depositId, string client);
-        Task<Keccak> DisableDataStreamsAsync(Keccak depositId);
+        Task<Keccak?> EnableDataStreamAsync(Keccak depositId, string client, string[] args);
+        Task<Keccak?> DisableDataStreamAsync(Keccak depositId, string client);
+        Task<Keccak?> DisableDataStreamsAsync(Keccak depositId);
         Task SetEnabledDataStreamAsync(Keccak depositId, string client, string[] args);
         Task SetDisabledDataStreamAsync(Keccak depositId, string client);
         
@@ -69,12 +68,12 @@ namespace Nethermind.DataMarketplace.Consumers.Shared
         
         #region Deposits
         
-        Task<DepositDetails> GetDepositAsync(Keccak depositId);
+        Task<DepositDetails?> GetDepositAsync(Keccak depositId);
         Task<PagedResult<DepositDetails>> GetDepositsAsync(GetDeposits query);
-        Task<Keccak> MakeDepositAsync(Keccak assetId, uint units, UInt256 value);
+        Task<Keccak?> MakeDepositAsync(Keccak assetId, uint units, UInt256 value, UInt256? gasPrice = null);
 
         Task<PagedResult<DepositApproval>> GetDepositApprovalsAsync(GetConsumerDepositApprovals query);
-        Task<Keccak> RequestDepositApprovalAsync(Keccak assetId, string kyc);
+        Task<Keccak?> RequestDepositApprovalAsync(Keccak assetId, string kyc);
         Task ConfirmDepositApprovalAsync(Keccak assetId, Address consumer);
         Task RejectDepositApprovalAsync(Keccak assetId, Address consumer);
         Task UpdateDepositApprovalsAsync(IReadOnlyList<DepositApproval> depositApprovals, Address provider);
@@ -106,9 +105,16 @@ namespace Nethermind.DataMarketplace.Consumers.Shared
         
         IReadOnlyList<ConsumerSession> GetActiveSessions();
         Task StartSessionAsync(Session session, INdmPeer provider);
-        Task<Keccak> SendFinishSessionAsync(Keccak depositId);
+        Task<Keccak?> SendFinishSessionAsync(Keccak depositId);
         Task FinishSessionAsync(Session session, INdmPeer provider, bool removePeer = true);
         Task FinishSessionsAsync(INdmPeer provider, bool removePeer = true);
+        
+        #endregion
+
+        #region Proxy
+        
+        Task<NdmProxy?> GetProxyAsync();
+        Task SetProxyAsync(IEnumerable<string> urls);
         
         #endregion
     }

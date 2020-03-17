@@ -1,24 +1,23 @@
-﻿/*
- * Copyright (c) 2018 Demerzel Solutions Limited
- * This file is part of the Nethermind library.
- *
- * The Nethermind library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The Nethermind library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
- */
+﻿//  Copyright (c) 2018 Demerzel Solutions Limited
+//  This file is part of the Nethermind library.
+// 
+//  The Nethermind library is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+// 
+//  The Nethermind library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU Lesser General Public License for more details.
+// 
+//  You should have received a copy of the GNU Lesser General Public License
+//  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.Net;
 using System.Net.Sockets;
+using Nethermind.Core;
 using Nethermind.Logging;
 using Nethermind.Network.Config;
 
@@ -33,9 +32,24 @@ namespace Nethermind.Network
         {
             _logger = logManager?.GetClassLogger() ?? throw new ArgumentNullException(nameof(logManager));
             _networkConfig = networkConfig ?? throw new ArgumentNullException(nameof(networkConfig));
+
+            try
+            {
+                LocalIp = InitializeLocalIp();
+            }
+            catch (Exception)
+            {
+                LocalIp = IPAddress.Loopback;
+            }
             
-            LocalIp = InitializeLocalIp();
-            ExternalIp = InitializeExternalIp();
+            try
+            {
+                ExternalIp = InitializeExternalIp();
+            }
+            catch (Exception)
+            {
+               ExternalIp = IPAddress.None; 
+            }
         }
         
         public IPAddress LocalIp { get; }
@@ -60,9 +74,11 @@ namespace Nethermind.Network
             {
                 const string url = "http://checkip.amazonaws.com";
                 if(_logger.IsInfo) _logger.Info($"Using {url} to get external ip");
-                string ip = new WebClient().DownloadString(url);
-                if(_logger.IsInfo) _logger.Info($"External ip: {ip}");
-                return IPAddress.Parse(ip.Trim());
+                string ip = new WebClient().DownloadString(url).Trim();
+                if(_logger.IsDebug) _logger.Debug($"External ip: {ip}");
+                ThisNodeInfo.AddInfo("External IP  :", $"{ip}");
+                
+                return IPAddress.Parse(ip);
             }
             catch (Exception e)
             {
@@ -81,19 +97,17 @@ namespace Nethermind.Network
             
             try
             {
-                using (var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, 0))
-                {
-                    socket.Connect("www.google.com", 80);
-                    IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
-                    var address = endPoint?.Address;
-                    if(_logger.IsDebug) _logger.Debug($"Local ip: {address}");
-                    return address;
-                }
+                using Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, 0);
+                socket.Connect("www.google.com", 80);
+                IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
+                IPAddress address = endPoint?.Address;
+                if(_logger.IsDebug) _logger.Debug($"Local ip: {address}");
+                return address;
             }
             catch (Exception e)
             {
                 if(_logger.IsError) _logger.Error("Error while getting local ip", e);
-                return null;
+                return IPAddress.Loopback;
             }
         }
     }
