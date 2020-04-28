@@ -24,7 +24,9 @@ namespace Nethermind.Blockchain.Filters.Topics
         public static readonly AnyTopic Instance = new AnyTopic(); 
         
         public override bool Accepts(Keccak topic) => true;
+        public override bool Accepts(ref KeccakStructRef topic) => true;
 
-        public override bool Matches(Core.Bloom bloom) => true;
+        public override bool Matches(Bloom bloom) => true;
+        public override bool Matches(ref BloomStructRef bloom) => true;
     }
 }

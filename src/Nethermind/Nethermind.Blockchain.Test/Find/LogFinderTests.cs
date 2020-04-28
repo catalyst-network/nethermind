@@ -29,7 +29,6 @@ using Nethermind.Core.Specs;
 using Nethermind.Core.Test.Builders;
 using Nethermind.Db;
 using Nethermind.Logging;
-using Nethermind.Store;
 using Nethermind.Store.Bloom;
 using NSubstitute;
 using NUnit.Framework;
@@ -47,13 +46,18 @@ namespace Nethermind.Blockchain.Test.Find
         [SetUp]
         public void SetUp()
         {
+            SetUp(true);
+        }
+
+        private void SetUp(bool allowReceiptIterator)
+        {
             var specProvider = Substitute.For<ISpecProvider>();
             specProvider.GetSpec(Arg.Any<long>()).IsEip155Enabled.Returns(true);
-            _receiptStorage = new InMemoryReceiptStorage();
+            _receiptStorage = new InMemoryReceiptStorage(allowReceiptIterator);
             _blockTree = Build.A.BlockTree().WithTransactions(_receiptStorage, specProvider, LogsForBlockBuilder).OfChainLength(5).TestObject;
             _bloomStorage = new BloomStorage(new BloomConfig(), new MemDb(), new InMemoryDictionaryFileStoreFactory());
             _receiptsRecovery = Substitute.For<IReceiptsRecovery>();
-            _logFinder = new LogFinder(_blockTree, _receiptStorage, _bloomStorage, _receiptsRecovery, LimboLogs.Instance);
+            _logFinder = new LogFinder(_blockTree, _receiptStorage, _bloomStorage, LimboLogs.Instance, _receiptsRecovery);
         }
 
         private IEnumerable<LogEntry> LogsForBlockBuilder(Block block, Transaction transaction)
@@ -93,8 +97,9 @@ namespace Nethermind.Blockchain.Test.Find
         }
 
         [Test]
-        public void filter_all_logs([ValueSource(nameof(WithBloomValues))] bool withBloomDb)
+        public void filter_all_logs([ValueSource(nameof(WithBloomValues))] bool withBloomDb, [Values(false, true)] bool allowReceiptIterator)
         {
+            SetUp(allowReceiptIterator);
             StoreTreeBlooms(withBloomDb);
             var logFilter = AllBlockFilter().Build();
             var logs = _logFinder.FindLogs(logFilter).ToArray();
@@ -107,7 +112,7 @@ namespace Nethermind.Blockchain.Test.Find
         {
             StoreTreeBlooms(withBloomDb);
             _receiptStorage = NullReceiptStorage.Instance;
-            _logFinder = new LogFinder(_blockTree, _receiptStorage, _bloomStorage, _receiptsRecovery, LimboLogs.Instance);
+            _logFinder = new LogFinder(_blockTree, _receiptStorage, _bloomStorage, LimboLogs.Instance, _receiptsRecovery);
             
             var logFilter = AllBlockFilter().Build();
             var logs = _logFinder.FindLogs(logFilter);
@@ -119,7 +124,7 @@ namespace Nethermind.Blockchain.Test.Find
         {
             StoreTreeBlooms(withBloomDb);
             var blockFinder = Substitute.For<IBlockFinder>();
-            _logFinder = new LogFinder(blockFinder, _receiptStorage, _bloomStorage, _receiptsRecovery, LimboLogs.Instance);
+            _logFinder = new LogFinder(blockFinder, _receiptStorage, _bloomStorage, LimboLogs.Instance, _receiptsRecovery);
             var logFilter = AllBlockFilter().Build();
             var action = new Func<IEnumerable<FilterLog>>(() =>_logFinder.FindLogs(logFilter));
             action.Should().Throw<ArgumentException>();
@@ -221,7 +226,7 @@ namespace Nethermind.Blockchain.Test.Find
         public void filter_by_blocks_with_limit([ValueSource(nameof(WithBloomValues))]bool withBloomDb)
         {
             StoreTreeBlooms(withBloomDb);
-            _logFinder = new LogFinder(_blockTree,  _receiptStorage, _bloomStorage, _receiptsRecovery, LimboLogs.Instance, 2);
+            _logFinder = new LogFinder(_blockTree,  _receiptStorage, _bloomStorage, LimboLogs.Instance, _receiptsRecovery, 2);
             var filter = FilterBuilder.New().FromLatestBlock().ToLatestBlock().Build();
             var logs = _logFinder.FindLogs(filter).ToArray();
 

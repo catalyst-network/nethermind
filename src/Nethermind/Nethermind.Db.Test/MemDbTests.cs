@@ -23,6 +23,16 @@ namespace Nethermind.Db.Test
     [TestFixture]
     public class MemDbTests
     {
+        [Test]
+        public void Simple_set_get_is_fine()
+        {
+            IDb memDb = new MemDb();
+            byte[] bytes = new byte[] {1, 2, 3};
+            memDb.Set(TestItem.KeccakA, bytes);
+            byte[] retrievedBytes = memDb.Get(TestItem.KeccakA);
+            retrievedBytes.Should().BeEquivalentTo(bytes);
+        }
+
         private byte[] _sampleValue = {1, 2, 3};
 
         [Test]
@@ -63,7 +73,7 @@ namespace Nethermind.Db.Test
         }
 
         [Test]
-        public void Can_clear()
+        public void Can_delete()
         {
             MemDb memDb = new MemDb();
             memDb.Set(TestItem.KeccakA, _sampleValue);
@@ -111,14 +121,14 @@ namespace Nethermind.Db.Test
             result[1].Value.Should().NotBeNull();
             result[2].Value.Should().BeNull();
         }
-        
+
         [Test]
         public void Can_get_all()
         {
             MemDb memDb = new MemDb();
             memDb.Set(TestItem.KeccakA, _sampleValue);
             memDb.Set(TestItem.KeccakB, _sampleValue);
-            memDb.GetAll().Should().HaveCount(2);
+            memDb.GetAllValues().Should().HaveCount(2);
         }
 
         [Test]
@@ -136,7 +146,7 @@ namespace Nethermind.Db.Test
             MemDb memDb = new MemDb();
             memDb.Dispose();
         }
-        
+
         [Test]
         public void Flush_does_not_cause_trouble()
         {

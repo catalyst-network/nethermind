@@ -52,7 +52,7 @@ namespace Nethermind.AuRa.Test
         {
             _blockTree = Substitute.For<IBlockTree>();
             _headStep = 10;
-            _blockTree.Head.Returns(Build.A.BlockHeader.WithHash(Keccak.Compute("hash")).WithAura(_headStep, Bytes.Empty).TestObject);
+            _blockTree.Head.Returns(Build.A.Block.WithHeader(Build.A.BlockHeader.WithHash(Keccak.Compute("hash")).WithAura(_headStep, Bytes.Empty).TestObject).TestObject);
 
             _auRaStepCalculator = Substitute.For<IAuRaStepCalculator>();
             _validatorStore = Substitute.For<IValidatorStore>();
@@ -70,8 +70,8 @@ namespace Nethermind.AuRa.Test
                 LimboLogs.Instance);
         }
 
-        [TestCase(9, true, ExpectedResult = false, TestName = "Step too low.")]
-        [TestCase(10, true, ExpectedResult = false, TestName = "Step too low.")]
+        [TestCase(9, true, ExpectedResult = false, TestName = "Step too low-1.")]
+        [TestCase(10, true, ExpectedResult = false, TestName = "Step too low-2.")]
         [TestCase(11, false, ExpectedResult = false, TestName = "Invalid sealer.")]
         [TestCase(11, true, ExpectedResult = true, TestName = "Can seal.")]
         public bool can_seal(long auRaStep, bool validSealer)

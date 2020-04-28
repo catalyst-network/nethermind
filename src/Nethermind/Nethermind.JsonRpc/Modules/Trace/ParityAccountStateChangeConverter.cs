@@ -18,7 +18,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Nethermind.Dirichlet.Numerics;
-using Nethermind.Evm.Tracing;
 using Nethermind.Evm.Tracing.ParityStyle;
 using Nethermind.Serialization.Json;
 using Newtonsoft.Json;
@@ -29,7 +28,7 @@ namespace Nethermind.JsonRpc.Modules.Trace
     public class ParityAccountStateChangeConverter : JsonConverter<ParityAccountStateChange>
     {
         private ByteArrayConverter _bytesConverter = new ByteArrayConverter();
-        private UInt256Converter _intConverter = new UInt256Converter();
+        private NullableUInt256Converter _intConverter = new NullableUInt256Converter();
         private Bytes32Converter _32BytesConverter = new Bytes32Converter();
 
         private void WriteChange(JsonWriter writer, ParityStateChange<byte[]> change, JsonSerializer serializer)

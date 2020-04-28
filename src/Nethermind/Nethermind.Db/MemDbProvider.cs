@@ -20,7 +20,7 @@ namespace Nethermind.Db
     {
         public ISnapshotableDb StateDb { get; } = new StateDb();
         public ISnapshotableDb CodeDb { get; } = new StateDb();
-        public IDb ReceiptsDb { get; } = new MemDb();
+        public IColumnsDb<ReceiptsColumns> ReceiptsDb { get; } = new MemColumnsDb<ReceiptsColumns>();
         public IDb BlocksDb { get; } = new MemDb();
         public IDb HeadersDb { get; } = new MemDb();
         public IDb BlockInfosDb { get; } = new MemDb();
@@ -28,6 +28,7 @@ namespace Nethermind.Db
         public IDb ConfigsDb { get; } = new MemDb();
         public IDb EthRequestsDb { get; } = new MemDb();
         public IDb BloomDb { get; } = new MemDb();
+        public IDb BeamStateDb { get; } = new MemDb();
 
         public void Dispose()
         {

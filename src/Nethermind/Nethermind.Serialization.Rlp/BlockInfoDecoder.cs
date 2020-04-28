@@ -14,12 +14,11 @@
 //  You should have received a copy of the GNU Lesser General Public License
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
-using System.IO;
 using Nethermind.Core;
 
 namespace Nethermind.Serialization.Rlp
 {
-    public class BlockInfoDecoder : IRlpDecoder<BlockInfo>
+    public class BlockInfoDecoder : IRlpDecoder<BlockInfo>, IRlpValueDecoder<BlockInfo>
     {
         private readonly bool _chainWithFinalization;
 
@@ -82,6 +81,46 @@ namespace Nethermind.Serialization.Rlp
         }
 
         public int GetLength(BlockInfo item, RlpBehaviors rlpBehaviors)
+        {
+            throw new System.NotImplementedException();
+        }
+
+        public BlockInfo Decode(ref Rlp.ValueDecoderContext decoderContext, RlpBehaviors rlpBehaviors = RlpBehaviors.None)
+        {
+            if (decoderContext.IsNextItemNull())
+            {
+                decoderContext.ReadByte();
+                return null;
+            }
+            
+            int lastCheck = decoderContext.ReadSequenceLength() + decoderContext.Position;
+
+            BlockInfo blockInfo = new BlockInfo
+            {
+                BlockHash = decoderContext.DecodeKeccak(),
+                WasProcessed = decoderContext.DecodeBool(),
+                TotalDifficulty = decoderContext.DecodeUInt256()
+            };
+
+            if (_chainWithFinalization)
+            {
+                blockInfo.IsFinalized = decoderContext.DecodeBool();
+            }
+
+            if ((rlpBehaviors & RlpBehaviors.AllowExtraData) != RlpBehaviors.AllowExtraData)
+            {
+                decoderContext.Check(lastCheck);
+            }
+
+            return blockInfo;
+        }
+
+        public Rlp Encode(ChainLevelInfo item, RlpBehaviors rlpBehaviors = RlpBehaviors.None)
+        {
+            throw new System.NotImplementedException();
+        }
+
+        public int GetLength(ChainLevelInfo item, RlpBehaviors rlpBehaviors)
         {
             throw new System.NotImplementedException();
         }

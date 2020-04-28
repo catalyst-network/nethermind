@@ -87,5 +87,38 @@ namespace Nethermind.Consensus.AuRa
         {
             return list.BinarySearch(value, comparer.Compare);
         }
+        
+        
+        /// <summary>
+        /// Tries to get a <see cref="IActivatedAtBlock"/> item for block <see cref="blockNumber"/>.
+        /// </summary>
+        /// <param name="list"></param>
+        /// <param name="blockNumber"></param>
+        /// <param name="item"></param>
+        /// <typeparam name="T"></typeparam>
+        /// <returns></returns>
+        public static bool TryGetForBlock<T>(this IList<T> list, in long blockNumber, out T item) where T : IActivatedAtBlock
+        {
+            var index = list.BinarySearch(blockNumber, (b, c) => b.CompareTo(c.ActivationBlock));
+            if (index >= 0)
+            {
+                item = list[index];
+                return true;
+            }
+            else
+            {
+                var largerIndex = ~index;
+                if (largerIndex != 0)
+                {
+                    item = list[largerIndex - 1];
+                    return true;
+                }
+                else
+                {
+                    item = default;
+                    return false;
+                }
+            }
+        }
     }
 }

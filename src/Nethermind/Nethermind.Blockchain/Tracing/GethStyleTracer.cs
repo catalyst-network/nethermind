@@ -17,12 +17,11 @@
 using System;
 using System.Linq;
 using Nethermind.Blockchain.Find;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Blockchain.Receipts;
-using Nethermind.Blockchain.Validators;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
 using Nethermind.Evm.Tracing.GethStyle;
-using Nethermind.Evm.Tracing.ParityStyle;
 using Nethermind.Serialization.Rlp;
 
 namespace Nethermind.Blockchain.Tracing
@@ -57,13 +56,13 @@ namespace Nethermind.Blockchain.Tracing
 
         public GethLikeTxTrace Trace(Keccak txHash, GethTraceOptions traceOptions)
         {
-            TxReceipt txReceipt = _receiptStorage.Find(txHash);
-            if (txReceipt == null)
+            Keccak blockHash = _receiptStorage.FindBlockHash(txHash);
+            if (blockHash == null)
             {
                 return null;
             }
 
-            Block block = _blockTree.FindBlock(txReceipt.BlockNumber, BlockTreeLookupOptions.RequireCanonical);
+            Block block = _blockTree.FindBlock(blockHash, BlockTreeLookupOptions.RequireCanonical);
             if (block == null)
             {
                 return null;

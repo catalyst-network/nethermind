@@ -14,6 +14,7 @@
 //  You should have received a copy of the GNU Lesser General Public License
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -22,7 +23,7 @@ using Nethermind.Core.Extensions;
 
 namespace Nethermind.Db
 {
-    public class MemDb : IFullDb
+    public class MemDb : IFullDb, IDbWithSpan
     {
         private readonly int _writeDelay; // for testing scenarios
         private readonly int _readDelay; // for testing scenarios
@@ -104,7 +105,14 @@ namespace Nethermind.Db
         {
         }
 
-        public IEnumerable<byte[]> GetAll() => Values;
+        public void Clear()
+        {
+            _db.Clear();
+        }
+
+        public IEnumerable<KeyValuePair<byte[], byte[]>> GetAll(bool ordered = false) => _db;
+
+        public IEnumerable<byte[]> GetAllValues(bool ordered = false) => Values;
 
         public void StartBatch()
         {
@@ -117,12 +125,16 @@ namespace Nethermind.Db
         public ICollection<byte[]> Keys => _db.Keys;
         public ICollection<byte[]> Values => _db.Values;
 
-        public void Clear()
+        public void Dispose()
         {
-            _db.Clear();
         }
 
-        public void Dispose()
+        public Span<byte> GetSpan(byte[] key)
+        {
+            return this[key].AsSpan();
+        }
+
+        public void DangerousReleaseMemory(in Span<byte> span)
         {
         }
     }

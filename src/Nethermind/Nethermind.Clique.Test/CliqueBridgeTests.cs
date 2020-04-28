@@ -15,6 +15,7 @@
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using Nethermind.Blockchain;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Consensus;
 using Nethermind.Consensus.Clique;
 using Nethermind.Core;
@@ -31,6 +32,7 @@ using NUnit.Framework;
 
 namespace Nethermind.Clique.Test
 {
+    [Parallelizable(ParallelScope.Self)]
     [TestFixture]
     public class CliqueBridgeTests
     {
@@ -40,7 +42,7 @@ namespace Nethermind.Clique.Test
             CliqueConfig cliqueConfig = new CliqueConfig();
             IBlockTree blockTree = Substitute.For<IBlockTree>();
             CliqueBlockProducer producer = new CliqueBlockProducer(
-                Substitute.For<IPendingTxSelector>(),
+                Substitute.For<ITxSource>(),
                 Substitute.For<IBlockchainProcessor>(),
                 Substitute.For<IStateProvider>(),
                 blockTree,

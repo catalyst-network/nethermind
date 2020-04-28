@@ -15,9 +15,7 @@
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
-using System.Security.Cryptography;
 using DotNetty.Buffers;
-using Nethermind.Core;
 using Nethermind.Serialization.Rlp;
 
 namespace Nethermind.Network.P2P
@@ -34,7 +32,7 @@ namespace Nethermind.Network.P2P
             _initialPosition = byteBuffer.ReaderIndex;
         }
 
-        protected override void Write(Span<byte> bytesToWrite)
+        public override void Write(Span<byte> bytesToWrite)
         {
             _byteBuffer.EnsureWritable(bytesToWrite.Length, true);
 
@@ -44,7 +42,7 @@ namespace Nethermind.Network.P2P
             _byteBuffer.SetWriterIndex(newWriterIndex);
         }
 
-        protected override void WriteByte(byte byteToWrite)
+        public override void WriteByte(byte byteToWrite)
         {
             _byteBuffer.EnsureWritable(1, true);
             _byteBuffer.WriteByte(byteToWrite);
@@ -68,7 +66,7 @@ namespace Nethermind.Network.P2P
              return span;
         }
 
-        protected override byte PeekByte()
+        public override byte PeekByte()
         {
             byte result = _byteBuffer.ReadByte();
             _byteBuffer.SetReaderIndex(_byteBuffer.ReaderIndex - 1);

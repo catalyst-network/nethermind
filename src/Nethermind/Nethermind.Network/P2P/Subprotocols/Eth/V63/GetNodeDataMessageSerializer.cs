@@ -16,38 +16,16 @@
 
 using DotNetty.Buffers;
 using Nethermind.Core.Crypto;
-using Nethermind.Core.Extensions;
 using Nethermind.Serialization.Rlp;
 
 namespace Nethermind.Network.P2P.Subprotocols.Eth.V63
 {
-    public class GetNodeDataMessageSerializer : IZeroMessageSerializer<GetNodeDataMessage>
+    public class GetNodeDataMessageSerializer : HashesMessageSerializer<GetNodeDataMessage>
     {
-        public void Serialize(IByteBuffer byteBuffer, GetNodeDataMessage message)
+        public override GetNodeDataMessage Deserialize(IByteBuffer byteBuffer)
         {
-            int contentLength = 0;
-            for (int i = 0; i < message.Keys.Count; i++)
-            {
-                contentLength += Rlp.LengthOf(message.Keys[i]);
-            }
-            
-            int totalLength = Rlp.LengthOfSequence(contentLength);
-            
-            RlpStream rlpStream = new NettyRlpStream(byteBuffer);
-            byteBuffer.EnsureWritable(totalLength, true);
-            
-            rlpStream.StartSequence(contentLength);
-            for (int i = 0; i < message.Keys.Count; i++)
-            {
-                rlpStream.Encode(message.Keys[i]);
-            }
-        }
-
-        public GetNodeDataMessage Deserialize(IByteBuffer byteBuffer)
-        {
-            RlpStream rlpStream = new NettyRlpStream(byteBuffer);
-            Keccak[] result = rlpStream.DecodeArray(stream => stream.DecodeKeccak());
-            return new GetNodeDataMessage(result);
+            Keccak[] keys = DeserializeHashes(byteBuffer);
+            return new GetNodeDataMessage(keys);
         }
     }
 }

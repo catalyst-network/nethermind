@@ -18,15 +18,14 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using Nethermind.Blockchain;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Blockchain.Tracing;
 using Nethermind.Config;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
 using Nethermind.Db;
-using Nethermind.Evm.Tracing;
 using Nethermind.Evm.Tracing.GethStyle;
 using Nethermind.Serialization.Rlp;
-using Nethermind.Store;
 
 namespace Nethermind.JsonRpc.Modules.DebugModule
 {
@@ -39,7 +38,6 @@ namespace Nethermind.JsonRpc.Modules.DebugModule
 
         public DebugBridge(IConfigProvider configProvider, IReadOnlyDbProvider dbProvider, IGethStyleTracer tracer, IBlockProcessingQueue receiptsBlockQueue, IBlockTree blockTree)
         {
-            receiptsBlockQueue.ProcessingQueueEmpty += (sender, args) => _receiptProcessedEvent.Set();
             _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
             _tracer = tracer ?? throw new ArgumentNullException(nameof(tracer));
             _blockTree = blockTree ?? throw new ArgumentNullException(nameof(blockTree));
@@ -134,7 +132,5 @@ namespace Nethermind.JsonRpc.Modules.DebugModule
         {
             return _configProvider.GetRawValue(category, name);
         }
-
-        private AutoResetEvent _receiptProcessedEvent = new AutoResetEvent(false);
     }
 }

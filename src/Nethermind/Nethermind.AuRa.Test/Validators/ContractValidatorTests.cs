@@ -53,7 +53,7 @@ namespace Nethermind.AuRa.Test.Validators
         private ITransactionProcessor _transactionProcessor;
         private IBlockFinalizationManager _blockFinalizationManager;
         private static Address _contractAddress = Address.FromNumber(1000);
-        private (Address Sender, byte[] TransactionData) _getValidatorsData = (_contractAddress, new byte[] {0, 1, 2});
+        private (Address Sender, byte[] TransactionData) _getValidatorsData = (Address.Zero, new byte[] {0, 1, 2});
         private (Address Sender, byte[] TransactionData) _finalizeChangeData = (Address.SystemUser, new byte[] {3, 4, 5});
         private Address[] _initialValidators;
         private IBlockTree _blockTree;
@@ -577,18 +577,18 @@ namespace Nethermind.AuRa.Test.Validators
                         {
                             Build.A.LogEntry.WithAddress(_contractAddress)
                                 .WithData(new[] {(byte) (block.Number * 10 + i++)})
-                                .WithTopics(ValidatorContract.Definition.initiateChangeEventHash, block.ParentHash)
+                                .WithTopics(ValidatorContract.Definition.Events[ValidatorContract.InitiateChange].GetHash(), block.ParentHash)
                                 .TestObject
                         };
                     })
                 .OfChainLength(9, 0, 0, validators);
             
             var blockTree = blockTreeBuilder.TestObject;
-            SetupInitialValidators(blockTree.Head, validators);
+            SetupInitialValidators(blockTree.Head?.Header, validators);
             IAuRaValidatorProcessorExtension validator = new ContractBasedValidator(_validator, _stateProvider, _abiEncoder, _transactionProcessor, _readOnlyTransactionProcessorSource, blockTree, inMemoryReceiptStorage, _validatorStore, _validSealerStrategy, _logManager, 1);
             validator.SetFinalizationManager(_blockFinalizationManager);
 
-            _abiEncoder.Decode(ValidatorContract.Definition.addressArrayResult, Arg.Any<byte[]>())
+            _abiEncoder.Decode(ValidatorContract.Definition.Functions[ValidatorContract.GetValidatorsFunction].GetReturnInfo(), Arg.Any<byte[]>())
                 .Returns(c =>
                 {
                     var addressIndex = c.Arg<byte[]>()[0];
@@ -702,7 +702,7 @@ namespace Nethermind.AuRa.Test.Validators
                     {
                         new LogEntry(contractAddress,
                             dataFunc(validators),
-                            new[] {ValidatorContract.Definition.initiateChangeEventHash, block.ParentHash})
+                            new[] {ValidatorContract.Definition.Events[ValidatorContract.InitiateChange].GetHash(), block.ParentHash})
                     };
                     
                     return new TxReceipt[]

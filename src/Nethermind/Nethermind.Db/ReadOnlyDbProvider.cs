@@ -36,7 +36,7 @@ namespace Nethermind.Db
             CodeDb = new StateDb(NestedCodeDb);
             // StateDb = new ReadOnlyDb(wrappedProvider.StateDb, createInMemoryWriteStore);
             // CodeDb = new ReadOnlyDb(wrappedProvider.CodeDb, createInMemoryWriteStore);
-            NestedReceiptsDb = new ReadOnlyDb(wrappedProvider.ReceiptsDb, createInMemoryWriteStore);
+            NestedReceiptsDb = new ReadOnlyColumnsDb<ReceiptsColumns>(wrappedProvider.ReceiptsDb, createInMemoryWriteStore);
             NestedBlockInfosDb = new ReadOnlyDb(wrappedProvider.BlockInfosDb, createInMemoryWriteStore);
             NestedBlocksDb = new ReadOnlyDb(wrappedProvider.BlocksDb, createInMemoryWriteStore);
             NestedHeadersDb = new ReadOnlyDb(wrappedProvider.HeadersDb, createInMemoryWriteStore);
@@ -52,7 +52,7 @@ namespace Nethermind.Db
 
         public ISnapshotableDb StateDb { get; }
         public ISnapshotableDb CodeDb { get; }
-        public IDb ReceiptsDb => NestedReceiptsDb;
+        public IColumnsDb<ReceiptsColumns> ReceiptsDb => NestedReceiptsDb;
         public IDb BlocksDb => NestedBlocksDb;
         public IDb HeadersDb => NestedHeadersDb;
         public IDb BlockInfosDb => NestedBlockInfosDb;
@@ -60,7 +60,8 @@ namespace Nethermind.Db
         public IDb ConfigsDb => NestedConfigsDb;
         public IDb EthRequestsDb => NestedEthRequestsDb;
         public IDb BloomDb => NestedBloomDb;
-        public ReadOnlyDb NestedReceiptsDb { get; }
+        public IDb BeamStateDb { get; } = new MemDb(); 
+        public ReadOnlyColumnsDb<ReceiptsColumns> NestedReceiptsDb { get; }
         public ReadOnlyDb NestedBlocksDb { get; }
         public ReadOnlyDb NestedHeadersDb { get; }
         public ReadOnlyDb NestedBlockInfosDb { get; }
@@ -81,6 +82,7 @@ namespace Nethermind.Db
             NestedEthRequestsDb.Restore(-1); 
             NestedReceiptsDb.Restore(-1);
             NestedBloomDb.Restore(-1);
+            BeamStateDb.Clear();
         }
     }
 }

@@ -15,6 +15,7 @@
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using Nethermind.Blockchain;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Blockchain.Receipts;
 using Nethermind.Blockchain.Rewards;
 using Nethermind.Blockchain.Synchronization;
@@ -28,6 +29,7 @@ using Nethermind.Network;
 using Nethermind.Runner.Ethereum.Context;
 using Nethermind.Store;
 using Nethermind.Store.Bloom;
+using Nethermind.Synchronization;
 using Nethermind.TxPool;
 using Nethermind.Wallet;
 using NSubstitute;
@@ -36,29 +38,28 @@ namespace Nethermind.Runner.Test.Ethereum
 {
     public static class Build
     {
-        public static EthereumRunnerContext ContextWithMocks()
-        {
-            EthereumRunnerContext context = new EthereumRunnerContext(Substitute.For<IConfigProvider>(), LimboLogs.Instance);
-            context.LogManager = LimboLogs.Instance;
-            context.Enode = Substitute.For<IEnode>();
-            context.TxPool = Substitute.For<ITxPool>();
-            context.Wallet = Substitute.For<IWallet>();
-            context.BlockTree = Substitute.For<IBlockTree>();
-            context.SyncServer = Substitute.For<ISyncServer>();
-            context.DbProvider = Substitute.For<IDbProvider>();
-            context.PeerManager = Substitute.For<IPeerManager>();
-            context.SpecProvider = Substitute.For<ISpecProvider>();
-            context.EthereumEcdsa = Substitute.For<IEthereumEcdsa>();
-            context.MainBlockProcessor = Substitute.For<IBlockProcessor>();
-            context.ReceiptStorage = Substitute.For<IReceiptStorage>();
-            context.BlockValidator = Substitute.For<IBlockValidator>();
-            context.RewardCalculatorSource = Substitute.For<IRewardCalculatorSource>();
-            context.RecoveryStep = Substitute.For<IBlockDataRecoveryStep>();
-            context.TxPoolInfoProvider = Substitute.For<ITxPoolInfoProvider>();
-            context.StaticNodesManager = Substitute.For<IStaticNodesManager>();
-            context.BloomStorage = Substitute.For<IBloomStorage>();
-
-            return context;
-        }
+        public static EthereumRunnerContext ContextWithMocks() =>
+            new EthereumRunnerContext(Substitute.For<IConfigProvider>(), LimboLogs.Instance)
+            {
+                LogManager = LimboLogs.Instance,
+                Enode = Substitute.For<IEnode>(),
+                TxPool = Substitute.For<ITxPool>(),
+                Wallet = Substitute.For<IWallet>(),
+                BlockTree = Substitute.For<IBlockTree>(),
+                SyncServer = Substitute.For<ISyncServer>(),
+                DbProvider = Substitute.For<IDbProvider>(),
+                PeerManager = Substitute.For<IPeerManager>(),
+                SpecProvider = Substitute.For<ISpecProvider>(),
+                EthereumEcdsa = Substitute.For<IEthereumEcdsa>(),
+                MainBlockProcessor = Substitute.For<IBlockProcessor>(),
+                ReceiptStorage = Substitute.For<IReceiptStorage>(),
+                ReceiptFinder = Substitute.For<IReceiptFinder>(),
+                BlockValidator = Substitute.For<IBlockValidator>(),
+                RewardCalculatorSource = Substitute.For<IRewardCalculatorSource>(),
+                RecoveryStep = Substitute.For<IBlockDataRecoveryStep>(),
+                TxPoolInfoProvider = Substitute.For<ITxPoolInfoProvider>(),
+                StaticNodesManager = Substitute.For<IStaticNodesManager>(),
+                BloomStorage = Substitute.For<IBloomStorage>()
+            };
     }
 }

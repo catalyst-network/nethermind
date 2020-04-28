@@ -15,10 +15,10 @@
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
-using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Consensus;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
@@ -39,11 +39,11 @@ namespace Nethermind.Blockchain.Producers
         private readonly ISealer _sealer;
         private readonly IStateProvider _stateProvider;
         private readonly ITimestamper _timestamper;
-        private readonly IPendingTxSelector _pendingTxSelector;
+        private readonly ITxSource _txSource;
         protected ILogger Logger { get; }
 
         protected BaseBlockProducer(
-            IPendingTxSelector pendingTxSelector,
+            ITxSource txSource,
             IBlockchainProcessor processor,
             ISealer sealer,
             IBlockTree blockTree,
@@ -52,7 +52,7 @@ namespace Nethermind.Blockchain.Producers
             ITimestamper timestamper,
             ILogManager logManager)
         {
-            _pendingTxSelector = pendingTxSelector ?? throw new ArgumentNullException(nameof(pendingTxSelector));
+            _txSource = txSource ?? throw new ArgumentNullException(nameof(txSource));
             Processor = processor ?? throw new ArgumentNullException(nameof(processor));
             _sealer = sealer ?? throw new ArgumentNullException(nameof(sealer));
             BlockTree = blockTree ?? throw new ArgumentNullException(nameof(blockTree));
@@ -72,7 +72,7 @@ namespace Nethermind.Blockchain.Producers
         {
             lock (_newBlockLock)
             {
-                BlockHeader parentHeader = BlockTree.Head;
+                BlockHeader parentHeader = BlockTree.Head?.Header;
                 if (parentHeader == null)
                 {
                     if (Logger.IsWarn) Logger.Warn($"Preparing new block - parent header is null");
@@ -153,7 +153,7 @@ namespace Nethermind.Blockchain.Producers
                 difficulty,
                 parent.Number + 1,
                 parent.GasLimit,
-                UInt256.Max(parent.Timestamp + 1, Timestamper.Default.EpochSeconds),
+                UInt256.Max(parent.Timestamp + 1, _timestamper.EpochSeconds),
                 Encoding.UTF8.GetBytes("Nethermind"))
             {
                 TotalDifficulty = parent.TotalDifficulty + difficulty
@@ -161,7 +161,7 @@ namespace Nethermind.Blockchain.Producers
 
             if (Logger.IsDebug) Logger.Debug($"Setting total difficulty to {parent.TotalDifficulty} + {difficulty}.");
 
-            var transactions = _pendingTxSelector.SelectTransactions(parent.StateRoot, header.GasLimit);
+            var transactions = _txSource.GetTransactions(parent, header.GasLimit);
             Block block = new Block(header, transactions, new BlockHeader[0]);
             header.TxRoot = new TxTrie(block.Transactions).RootHash;
             return block;

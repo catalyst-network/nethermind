@@ -18,6 +18,7 @@ using System;
 using System.Threading.Tasks;
 using Nethermind.Cli.Modules;
 using Nethermind.DataMarketplace.Core.Configs;
+using Nethermind.Db.Rocks.Config;
 using Nethermind.Facade;
 using Nethermind.JsonRpc;
 using Nethermind.JsonRpc.Modules;
@@ -31,6 +32,7 @@ using Nethermind.JsonRpc.Modules.Proof;
 using Nethermind.JsonRpc.Modules.Trace;
 using Nethermind.JsonRpc.Modules.TxPool;
 using Nethermind.Logging;
+using Nethermind.Network.Config;
 using Nethermind.Runner.Ethereum.Context;
 using Nethermind.Runner.Ethereum.Subsystems;
 
@@ -63,6 +65,7 @@ namespace Nethermind.Runner.Ethereum.Steps
             IInitConfig initConfig = _context.Config<IInitConfig>();
             INdmConfig ndmConfig = _context.Config<INdmConfig>();
             IJsonRpcConfig rpcConfig = _context.Config<IJsonRpcConfig>();
+            INetworkConfig networkConfig = _context.Config<INetworkConfig>();
             if (ndmConfig.Enabled && !(_context.NdmInitializer is null) && ndmConfig.ProxyEnabled)
             {
                 EthModuleProxyFactory proxyFactory = new EthModuleProxyFactory(_context.EthJsonRpcClientProxy, _context.Wallet);
@@ -72,11 +75,11 @@ namespace Nethermind.Runner.Ethereum.Steps
             else
             {
                 EthModuleFactory ethModuleFactory = new EthModuleFactory(_context.DbProvider, _context.TxPool, _context.Wallet, _context.BlockTree,
-                    _context.EthereumEcdsa, _context.MainBlockProcessor, _context.ReceiptStorage, _context.SpecProvider, rpcConfig, _context.BloomStorage, _context.LogManager);
+                    _context.EthereumEcdsa, _context.MainBlockProcessor, _context.ReceiptFinder, _context.SpecProvider, rpcConfig, _context.BloomStorage, _context.LogManager, initConfig.IsMining);
                 _context.RpcModuleProvider.Register(new BoundedModulePool<IEthModule>(8, ethModuleFactory));
             }
 
-            ProofModuleFactory proofModuleFactory = new ProofModuleFactory(_context.DbProvider, _context.BlockTree, _context.RecoveryStep, _context.ReceiptStorage, _context.SpecProvider, _context.LogManager);
+            ProofModuleFactory proofModuleFactory = new ProofModuleFactory(_context.DbProvider, _context.BlockTree, _context.RecoveryStep, _context.ReceiptFinder, _context.SpecProvider,  _context.LogManager);
             _context.RpcModuleProvider.Register(new BoundedModulePool<IProofModule>(2, proofModuleFactory));
 
             DebugModuleFactory debugModuleFactory = new DebugModuleFactory(_context.DbProvider, _context.BlockTree, _context.BlockValidator, _context.RecoveryStep, _context.RewardCalculatorSource, _context.ReceiptStorage, _context.ConfigProvider, _context.SpecProvider, _context.LogManager);
@@ -92,16 +95,16 @@ namespace Nethermind.Runner.Ethereum.Steps
                 _context.RpcModuleProvider.Register(new SingletonModulePool<IPersonalModule>(personalModule, true));
             }
 
-            AdminModule adminModule = new AdminModule(_context.PeerManager, _context.StaticNodesManager);
+            AdminModule adminModule = new AdminModule(_context.BlockTree, networkConfig, _context.PeerManager, _context.StaticNodesManager, _context.Enode, initConfig.BaseDbPath);
             _context.RpcModuleProvider.Register(new SingletonModulePool<IAdminModule>(adminModule, true));
 
             TxPoolModule txPoolModule = new TxPoolModule(_context.BlockTree, _context.TxPoolInfoProvider, _context.LogManager);
             _context.RpcModuleProvider.Register(new SingletonModulePool<ITxPoolModule>(txPoolModule, true));
 
-            NetModule netModule = new NetModule(_context.LogManager, new NetBridge(_context.Enode, _context.SyncServer, _context.PeerManager));
+            NetModule netModule = new NetModule(_context.LogManager, new NetBridge(_context.Enode, _context.SyncServer));
             _context.RpcModuleProvider.Register(new SingletonModulePool<INetModule>(netModule, true));
 
-            ParityModule parityModule = new ParityModule(_context.EthereumEcdsa, _context.TxPool, _context.BlockTree, _context.ReceiptStorage, _context.LogManager);
+            ParityModule parityModule = new ParityModule(_context.EthereumEcdsa, _context.TxPool, _context.BlockTree, _context.ReceiptFinder, _context.LogManager);
             _context.RpcModuleProvider.Register(new SingletonModulePool<IParityModule>(parityModule, true));
 
             SubsystemStateChanged?.Invoke(this, new SubsystemStateEventArgs(EthereumSubsystemState.Running));

@@ -14,7 +14,6 @@
 //  You should have received a copy of the GNU Lesser General Public License
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
-using Nethermind.Core.Crypto;
 using Nethermind.Stats.Model;
 
 namespace Nethermind.Stats
@@ -33,9 +32,17 @@ namespace Nethermind.Stats
         void ReportFailedValidation(Node node, CompatibilityValidationType p2PVersion);
         void ReportDisconnect(Node node, DisconnectType disconnectType, DisconnectReason disconnectReason);
         long GetNewPersistedReputation(Node node);
-        long GetCurrentPersistedReputation(Node node);
         void ReportSyncEvent(Node node, NodeStatsEventType nodeStatsEvent);
         bool HasFailedValidation(Node node);
-        void ReportTransferSpeedEvent(Node node, long value);
+        void ReportTransferSpeedEvent(Node node, TransferSpeedType transferSpeedType, long value);
+    }
+
+    public enum TransferSpeedType
+    {
+        Latency,
+        NodeData,
+        Headers,
+        Bodies,
+        Receipts
     }
 }

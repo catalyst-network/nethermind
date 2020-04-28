@@ -17,6 +17,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Consensus;
 using Nethermind.Core;
 using Nethermind.Dirichlet.Numerics;
@@ -31,7 +32,8 @@ namespace Nethermind.Blockchain.Producers
         private readonly ITxPool _txPool;
         private readonly SemaphoreSlim _newBlockLock = new SemaphoreSlim(1, 1);
 
-        public DevBlockProducer(IPendingTxSelector pendingTxSelector,
+        public DevBlockProducer(
+            ITxSource txSource,
             IBlockchainProcessor processor,
             IStateProvider stateProvider,
             IBlockTree blockTree,
@@ -39,7 +41,7 @@ namespace Nethermind.Blockchain.Producers
             ITxPool txPool,
             ITimestamper timestamper,
             ILogManager logManager) 
-            : base(pendingTxSelector, processor, NethDevSealEngine.Instance, blockTree, blockProcessingQueue, stateProvider, timestamper, logManager)
+            : base(txSource, processor, NethDevSealEngine.Instance, blockTree, blockProcessingQueue, stateProvider, timestamper, logManager)
         {
             _txPool = txPool ?? throw new ArgumentNullException(nameof(txPool));
         }

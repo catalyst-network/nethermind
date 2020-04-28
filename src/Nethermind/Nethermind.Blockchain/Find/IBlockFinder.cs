@@ -15,9 +15,7 @@
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
-using Nethermind.Blockchain.Filters;
 using Nethermind.Core;
-using Nethermind.Core.Attributes;
 using Nethermind.Core.Crypto;
 
 namespace Nethermind.Blockchain.Find
@@ -30,7 +28,7 @@ namespace Nethermind.Blockchain.Find
         
         Keccak PendingHash { get; }
         
-        BlockHeader Head { get; }
+        Block Head { get; }
         
         Block FindBlock(Keccak blockHash, BlockTreeLookupOptions options);
         
@@ -39,6 +37,8 @@ namespace Nethermind.Blockchain.Find
         BlockHeader FindHeader(Keccak blockHash, BlockTreeLookupOptions options);
         
         BlockHeader FindHeader(long blockNumber, BlockTreeLookupOptions options);
+        
+        Keccak FindBlockHash(long blockNumber);
         
         /// <summary>
         /// Checks if the block is currently in the canonical chain
@@ -60,7 +60,7 @@ namespace Nethermind.Blockchain.Find
         
         public Block FindGenesisBlock() => FindBlock(GenesisHash, BlockTreeLookupOptions.RequireCanonical);
         
-        public Block FindHeadBlock() => FindBlock(HeadHash, BlockTreeLookupOptions.None);
+        public Block FindHeadBlock() => Head;
         
         public Block FindEarliestBlock() => FindGenesisBlock();
         
@@ -76,7 +76,7 @@ namespace Nethermind.Blockchain.Find
 
         public BlockHeader FindEarliestHeader() => FindGenesisHeader();
         
-        public BlockHeader FindLatestHeader() => Head;
+        public BlockHeader FindLatestHeader() => Head?.Header;
 
         public BlockHeader FindPendingHeader() => FindHeader(PendingHash, BlockTreeLookupOptions.None);
         

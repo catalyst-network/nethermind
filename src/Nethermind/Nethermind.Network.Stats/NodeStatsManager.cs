@@ -17,9 +17,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Linq;
-using Nethermind.Core.Crypto;
 using Nethermind.Logging;
 using Nethermind.Stats.Model;
 
@@ -165,10 +162,10 @@ namespace Nethermind.Stats
             return stats.FailedCompatibilityValidation != null;
         }
 
-        public void ReportTransferSpeedEvent(Node node, long value)
+        public void ReportTransferSpeedEvent(Node node, TransferSpeedType type, long value)
         {
             INodeStats stats = GetOrAdd(node);
-            stats.AddTransferSpeedCaptureEvent(value);
+            stats.AddTransferSpeedCaptureEvent(type, value);
         }
     }
 }

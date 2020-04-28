@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using Nethermind.Blockchain;
 using Nethermind.Blockchain.Filters;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Blockchain.Receipts;
 using Nethermind.Core.Specs;
 using Nethermind.Crypto;
@@ -25,7 +26,6 @@ using Nethermind.Db;
 using Nethermind.Facade;
 using Nethermind.JsonRpc.Data;
 using Nethermind.Logging;
-using Nethermind.Store;
 using Nethermind.Store.Bloom;
 using Nethermind.TxPool;
 using Nethermind.Wallet;
@@ -38,9 +38,10 @@ namespace Nethermind.JsonRpc.Modules.Eth
         private readonly IBlockTree _blockTree;
         private readonly IDbProvider _dbProvider;
         private readonly IEthereumEcdsa _ethereumEcdsa;
-        private readonly IReceiptStorage _receiptStorage;
+        private readonly IReceiptFinder _receiptFinder;
         private readonly ISpecProvider _specProvider;
         private readonly ILogManager _logManager;
+        private readonly bool _isMining;
         private readonly ITxPool _txPool;
         private readonly IWallet _wallet;
         private readonly IFilterStore _filterStore;
@@ -54,23 +55,25 @@ namespace Nethermind.JsonRpc.Modules.Eth
             IBlockTree blockTree,
             IEthereumEcdsa ethereumEcdsa,
             IBlockProcessor blockProcessor,
-            IReceiptStorage receiptStorage,
+            IReceiptFinder receiptFinder,
             ISpecProvider specProvider,
             IJsonRpcConfig config,
             IBloomStorage bloomStorage,
-            ILogManager logManager)
+            ILogManager logManager,
+            bool isMining)
         {
             _dbProvider = dbProvider ?? throw new ArgumentNullException(nameof(dbProvider));
             _txPool = txPool ?? throw new ArgumentNullException(nameof(txPool));
             _wallet = wallet ?? throw new ArgumentNullException(nameof(wallet));
             _blockTree = blockTree ?? throw new ArgumentNullException(nameof(blockTree));
             _ethereumEcdsa = ethereumEcdsa ?? throw new ArgumentNullException(nameof(ethereumEcdsa));
-            _receiptStorage = receiptStorage ?? throw new ArgumentNullException(nameof(receiptStorage));
+            _receiptFinder = receiptFinder ?? throw new ArgumentNullException(nameof(receiptFinder));
             _specProvider = specProvider ?? throw new ArgumentNullException(nameof(specProvider));
             _rpcConfig = config ?? throw new ArgumentNullException(nameof(config));
             _bloomStorage = bloomStorage ?? throw new ArgumentNullException(nameof(bloomStorage));
             _logManager = logManager ?? throw new ArgumentNullException(nameof(logManager));
-            
+            _isMining = isMining;
+
             _filterStore = new FilterStore();
             _filterManager = new FilterManager(_filterStore, blockProcessor, _txPool, _logManager);
         }
@@ -87,21 +90,20 @@ namespace Nethermind.JsonRpc.Modules.Eth
                 readOnlyTxProcessingEnv.StorageProvider,
                 readOnlyTxProcessingEnv.BlockTree,
                 _txPool,
-                _receiptStorage,
+                _receiptFinder,
                 _filterStore,
                 _filterManager,
                 _wallet,
                 readOnlyTxProcessingEnv.TransactionProcessor,
                 _ethereumEcdsa,
                 _bloomStorage,
-                new ReceiptsRecovery(),
                 _logManager,
+                _isMining,
                 _rpcConfig.FindLogBlockDepthLimit);
             
-            return new EthModule(_rpcConfig, _logManager, blockchainBridge);
+            return new EthModule(_rpcConfig, blockchainBridge, _logManager);
         }
-        
-        
+
         public static List<JsonConverter> Converters = new List<JsonConverter>
         {
             new SyncingResultConverter(),

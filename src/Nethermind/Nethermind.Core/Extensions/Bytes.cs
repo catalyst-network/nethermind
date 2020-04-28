@@ -19,13 +19,11 @@ using System.Buffers.Binary;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
-using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.X86;
 using System.Text;
 using Nethermind.Core.Crypto;
 using Nethermind.Dirichlet.Numerics;
@@ -744,6 +742,32 @@ namespace Nethermind.Core.Extensions
             }
 
             return bytes;
+        }
+        
+        [SuppressMessage("ReSharper", "NonReadonlyMemberInGetHashCode")]
+        public static int GetSimplifiedHashCode(this byte[] bytes)
+        {
+            const int fnvPrime = 0x01000193;
+
+            if (bytes.Length == 0)
+            {
+                return 0;
+            }
+
+            return (fnvPrime * bytes.Length * (((fnvPrime * (bytes[0] + 7)) ^ (bytes[^1] + 23)) + 11)) ^ (bytes[(bytes.Length - 1) / 2] + 53);
+        }
+        
+        [SuppressMessage("ReSharper", "NonReadonlyMemberInGetHashCode")]
+        public static int GetSimplifiedHashCode(this Span<byte> bytes)
+        {
+            const int fnvPrime = 0x01000193;
+
+            if (bytes.Length == 0)
+            {
+                return 0;
+            }
+
+            return (fnvPrime * bytes.Length * (((fnvPrime * (bytes[0] + 7)) ^ (bytes[^1] + 23)) + 11)) ^ (bytes[(bytes.Length - 1) / 2] + 53);
         }
     }
 }

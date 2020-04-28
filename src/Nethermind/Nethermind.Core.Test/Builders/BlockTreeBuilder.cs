@@ -29,7 +29,6 @@ using Nethermind.Logging;
 using Nethermind.Serialization.Rlp;
 using Nethermind.State.Proofs;
 using Nethermind.State.Repositories;
-using Nethermind.State;
 using Nethermind.Store.Bloom;
 using Nethermind.TxPool;
 using NSubstitute;
@@ -158,15 +157,15 @@ namespace Nethermind.Core.Test.Builders
                 }
 
                 currentBlock.Header.TxRoot = new TxTrie(currentBlock.Transactions).RootHash;
-                currentBlock.Header.ReceiptsRoot = new ReceiptTrie(currentBlock.Number, _specProvider, receipts.ToArray()).RootHash;
+                var txReceipts = receipts.ToArray();
+                currentBlock.Header.ReceiptsRoot = new ReceiptTrie(currentBlock.Number, _specProvider, txReceipts).RootHash;
                 currentBlock.Header.Hash = currentBlock.CalculateHash();
-
-                foreach (TxReceipt receipt in receipts)
+                foreach (var txReceipt in txReceipts)
                 {
-                    receipt.BlockHash = currentBlock.Hash;
-                    receipt.BlockNumber = currentBlock.Number;
-                    _receiptStorage.Add(receipt, false);
+                    txReceipt.BlockHash = currentBlock.Hash;
                 }
+
+                _receiptStorage.Insert(currentBlock, txReceipts);
             }
             else
             {
@@ -205,11 +204,11 @@ namespace Nethermind.Core.Test.Builders
             blockTree.UpdateMainChain(new[] {block}, true);
         }
 
-        public static void ExtendTree(IBlockTree blockTree, int newChainLength)
+        public static void ExtendTree(IBlockTree blockTree, long newChainLength)
         {
             Block previous = blockTree.RetrieveHeadBlock();
-            int initialLength = (int) previous.Number + 1;
-            for (int i = initialLength; i < newChainLength; i++)
+            long initialLength = previous.Number + 1;
+            for (long i = initialLength; i < newChainLength; i++)
             {
                 previous = Build.A.Block.WithNumber(i).WithParent(previous).TestObject;
                 blockTree.SuggestBlock(previous);
