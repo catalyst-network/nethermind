@@ -23,16 +23,23 @@ using Nethermind.Serialization.Json;
 
 namespace Nethermind.Db.Rpc
 {
-    public class RpcColumnsDb : RpcDb, IColumnsDb<byte>
+    public class RpcColumnsDb<T> : RpcDb, IColumnsDb<T>
     {
         public RpcColumnsDb(string dbName, IJsonSerializer jsonSerializer, IJsonRpcClient rpcClient, ILogManager logManager, IDb recordDb) : base(dbName, jsonSerializer, rpcClient, logManager, recordDb)
         {
         }
 
         [Todo(Improve.MissingFunctionality, "Need to implement RPC method for column DB's")]
-        public IDb GetColumnDb(byte key) => this;
+        public IDbWithSpan GetColumnDb(T key) => this;
 
         [Todo(Improve.MissingFunctionality, "Need to implement RPC method for column DB's")]
-        public IEnumerable<byte> ColumnKeys { get; } = Array.Empty<byte>();
+        public IEnumerable<T> ColumnKeys { get; } = Array.Empty<T>();
+
+        public Span<byte> GetSpan(byte[] key) => this[key].AsSpan();
+
+        public void DangerousReleaseMemory(in Span<byte> span)
+        {
+            
+        }
     }
 }

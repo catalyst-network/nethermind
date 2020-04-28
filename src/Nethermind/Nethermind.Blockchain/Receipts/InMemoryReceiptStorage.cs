@@ -18,43 +18,74 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
+using Nethermind.Db;
+using Nethermind.Serialization.Rlp;
 
 namespace Nethermind.Blockchain.Receipts
 {
     public class InMemoryReceiptStorage : IReceiptStorage
     {
-        private readonly ConcurrentDictionary<Keccak, TxReceipt> _receipts =
-            new ConcurrentDictionary<Keccak, TxReceipt>();
-
-        public TxReceipt Find(Keccak hash)
-        {
-            _receipts.TryGetValue(hash, out var transaction);
-            return transaction;
-        }
-
-        public void Add(TxReceipt txReceipt, bool isProcessed)
-            => _receipts.TryAdd(txReceipt.TxHash, txReceipt);
-
-        public void Insert(long blockNumber, TxReceipt txReceipt)
-        {
-            if (txReceipt != null)
-            {
-                _receipts.TryAdd(txReceipt.TxHash, txReceipt);
-            }
-
-            LowestInsertedReceiptBlock = blockNumber;
-        }
-
-        public void Insert(List<(long blockNumber, TxReceipt txReceipt)> receipts)
-        {
-            foreach ((long blockNumber, TxReceipt txReceipt) in receipts)
-            {
-                Insert(blockNumber, txReceipt);
-            }
-        }
-
-        public long? LowestInsertedReceiptBlock { get; private set; }
+        private readonly bool _allowReceiptIterator;
+        private readonly ConcurrentDictionary<Keccak, TxReceipt[]> _receipts = new ConcurrentDictionary<Keccak, TxReceipt[]>();
         
-        public int Count => _receipts.Count;
+        private readonly ConcurrentDictionary<Keccak, TxReceipt> _transactions = new ConcurrentDictionary<Keccak, TxReceipt>();
+
+        public InMemoryReceiptStorage(bool allowReceiptIterator = true)
+        {
+            _allowReceiptIterator = allowReceiptIterator;
+        }
+
+        public Keccak FindBlockHash(Keccak txHash)
+        {
+            _transactions.TryGetValue(txHash, out var receipt);
+            return receipt?.BlockHash;
+        }
+
+        public TxReceipt[] Get(Block block) => Get(block.Hash);
+
+        public TxReceipt[] Get(Keccak blockHash)
+        {
+            _receipts.TryGetValue(blockHash, out var receipts);
+            return receipts;
+        }
+
+        public bool CanGetReceiptsByHash(long blockNumber) => true;
+        public bool TryGetReceiptsIterator(long blockNumber, Keccak blockHash, out ReceiptsIterator iterator)
+        {
+            if (_allowReceiptIterator && _receipts.TryGetValue(blockHash, out var receipts))
+            {
+#pragma warning disable 618
+                iterator = new ReceiptsIterator(ReceiptStorageDecoder.Instance.Encode(receipts, RlpBehaviors.Storage | RlpBehaviors.Eip658Receipts).Bytes, new MemDb());
+#pragma warning restore 618
+                return true;
+            }
+            else
+            {
+                iterator = new ReceiptsIterator();
+                return false;
+            }
+        }
+
+        public void Insert(Block block, params TxReceipt[] txReceipts)
+        {
+            _receipts[block.Hash] = txReceipts;
+            for (int i = 0; i < txReceipts.Length; i++)
+            {
+                var txReceipt = txReceipts[i];
+                txReceipt.BlockHash = block.Hash;
+                _transactions[txReceipt.TxHash] = txReceipt;
+            }
+
+            if (block.Number < (LowestInsertedReceiptBlock ?? long.MaxValue))
+            {
+                LowestInsertedReceiptBlock = block.Number;
+            }
+        }
+
+        public long? LowestInsertedReceiptBlock { get; set; }
+
+        public long MigratedBlockNumber { get; set; } = 0;
+
+        public int Count => _transactions.Count;
     }
 }

@@ -27,7 +27,7 @@ namespace Nethermind.Db
     {
         ISnapshotableDb StateDb { get; }
         ISnapshotableDb CodeDb { get; }
-        IDb ReceiptsDb { get; }
+        IColumnsDb<ReceiptsColumns> ReceiptsDb { get; }
         IDb BlocksDb { get; }
         IDb HeadersDb { get; }
         IDb BlockInfosDb { get; }
@@ -35,6 +35,7 @@ namespace Nethermind.Db
         IDb ConfigsDb { get; }
         IDb EthRequestsDb { get; }
         IDb BloomDb { get; }
+        IDb BeamStateDb { get; }
         // add C#8 Dispose (default implementation)
     }
 }

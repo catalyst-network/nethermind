@@ -22,13 +22,13 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using Nethermind.Blockchain;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Blockchain.Receipts;
 using Nethermind.Blockchain.Rewards;
 using Nethermind.Blockchain.Validators;
 using Nethermind.Consensus;
 using Nethermind.Consensus.Clique;
-using Nethermind.Consensus.Mining;
-using Nethermind.Consensus.Mining.Difficulty;
+using Nethermind.Consensus.Ethash;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
 using Nethermind.Crypto;
@@ -89,7 +89,7 @@ namespace Nethermind.PerfTest
             public Block LowestInsertedBody => _blockTree.LowestInsertedBody;
             public Block BestSuggestedBody => _blockTree.BestSuggestedBody;
             public long BestKnownNumber => _blockTree.BestKnownNumber;
-            public BlockHeader Head => _blockTree.Head;
+            public Block Head => _blockTree.Head;
             public bool CanAcceptNewBlocks { get; } = true;
 
             public async Task LoadBlocksFromDb(CancellationToken cancellationToken, long? startBlockNumber, int batchSize = BlockTree.DbLoadBatchSize, int maxBlocksToLoad = int.MaxValue)
@@ -151,6 +151,11 @@ namespace Nethermind.PerfTest
             public BlockHeader FindHeader(long blockNumber, BlockTreeLookupOptions options)
             {
                 return _blockTree.FindHeader(blockNumber, options);
+            }
+
+            public Keccak FindBlockHash(long blockNumber)
+            {
+                return _blockTree.FindBlockHash(blockNumber);
             }
 
             public bool IsMainChain(BlockHeader blockHeader)
@@ -324,7 +329,7 @@ namespace Nethermind.PerfTest
 
                 if (allocation.Constructor != null)
                 {
-                    Transaction constructorTransaction = new Transaction(true)
+                    Transaction constructorTransaction = new SystemTransaction()
                     {
                         SenderAddress = address,
                         Init = allocation.Constructor,

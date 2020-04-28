@@ -40,7 +40,7 @@ namespace Nethermind.Blockchain
         public Block LowestInsertedBody => _wrapped.LowestInsertedBody;
         public Block BestSuggestedBody => _wrapped.BestSuggestedBody;
         public long BestKnownNumber => _wrapped.BestKnownNumber;
-        public BlockHeader Head => _wrapped.Head;
+        public Block Head => _wrapped.Head;
         public bool CanAcceptNewBlocks { get; } = false;
 
         public Task LoadBlocksFromDb(CancellationToken cancellationToken, long? startBlockNumber, int batchSize = BlockTree.DbLoadBatchSize, int maxBlocksToLoad = Int32.MaxValue) => throw new InvalidOperationException($"{nameof(ReadOnlyBlockTree)} does not expect {nameof(LoadBlocksFromDb)} calls");
@@ -68,6 +68,7 @@ namespace Nethermind.Blockchain
         public BlockHeader FindHeader(Keccak blockHash, BlockTreeLookupOptions options) => _wrapped.FindHeader(blockHash, options);
 
         public BlockHeader FindHeader(long blockNumber, BlockTreeLookupOptions options) => _wrapped.FindHeader(blockNumber, options);
+        public Keccak FindBlockHash(long blockNumber) => _wrapped.FindBlockHash(blockNumber);
 
         public bool IsMainChain(BlockHeader blockHeader) => _wrapped.IsMainChain(blockHeader);
 

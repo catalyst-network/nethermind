@@ -14,8 +14,13 @@
 //  You should have received a copy of the GNU Lesser General Public License
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using Nethermind.Core.Crypto;
 using Nethermind.Db.Rocks;
 using Nethermind.Db.Rocks.Config;
+using Nethermind.Synchronization.Peers;
 using NUnit.Framework;
 
 namespace Nethermind.Db.Test
@@ -30,6 +35,47 @@ namespace Nethermind.Db.Test
             DbOnTheRocks db = new BlocksRocksDb("blocks", config);
             db[new byte[] {1, 2, 3}] = new byte[] {4, 5, 6};
             Assert.AreEqual(new byte[] {4, 5, 6}, db[new byte[] {1, 2, 3}]);
+        }
+
+        [Test]
+        public void Can_get_all_on_empty()
+        {
+            IDbConfig config = new DbConfig();
+            DbOnTheRocks db = new BlocksRocksDb("testIterator", config);
+            try
+            {
+                db.GetAll().ToList();
+            }
+            finally
+            {
+                db.Clear();
+                db.Dispose();
+            }
+        }
+
+        [Test]
+        public async Task Dispose_while_writing_does_not_cause_access_violation_exception()
+        {
+            IDbConfig config = new DbConfig();
+            DbOnTheRocks db = new BlocksRocksDb("testDispose1", config);
+
+            Task task = new Task(() =>
+            {
+                while (true)
+                {
+                    db.Set(Keccak.Zero, new byte[] {1, 2, 3});
+                }
+            });
+
+            task.Start();
+
+            await Task.Delay(100);
+            
+            db.Dispose();
+            
+            await Task.Delay(100);
+            
+            task.Dispose();
         }
     }
 }

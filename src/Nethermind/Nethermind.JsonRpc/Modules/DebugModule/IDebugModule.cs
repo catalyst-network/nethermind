@@ -15,11 +15,10 @@
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using Nethermind.Blockchain;
+using Nethermind.Blockchain.Find;
 using Nethermind.Core.Crypto;
 using Nethermind.Dirichlet.Numerics;
-using Nethermind.Evm.Tracing;
 using Nethermind.Evm.Tracing.GethStyle;
-using Nethermind.JsonRpc.Data;
 
 namespace Nethermind.JsonRpc.Modules.DebugModule
 {

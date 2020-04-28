@@ -17,16 +17,15 @@
 using System;
 using System.Collections.Generic;
 using Nethermind.Blockchain;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Blockchain.Receipts;
 using Nethermind.Blockchain.Rewards;
 using Nethermind.Blockchain.Tracing;
 using Nethermind.Blockchain.Validators;
 using Nethermind.Core.Specs;
 using Nethermind.Db;
-using Nethermind.Facade;
 using Nethermind.JsonRpc.Data;
 using Nethermind.Logging;
-using Nethermind.Store;
 using Newtonsoft.Json;
 
 namespace Nethermind.JsonRpc.Modules.Proof
@@ -34,7 +33,7 @@ namespace Nethermind.JsonRpc.Modules.Proof
     public class ProofModuleFactory : ModuleFactoryBase<IProofModule>
     {
         private readonly IBlockDataRecoveryStep _recoveryStep;
-        private readonly IReceiptStorage _receiptStorage;
+        private readonly IReceiptFinder _receiptFinder;
         private readonly ISpecProvider _specProvider;
         private readonly IDbProvider _dbProvider;
         private readonly ILogManager _logManager;
@@ -44,12 +43,12 @@ namespace Nethermind.JsonRpc.Modules.Proof
             IDbProvider dbProvider,
             IBlockTree blockTree,
             IBlockDataRecoveryStep recoveryStep,
-            IReceiptStorage receiptStorage,
+            IReceiptFinder receiptFinder,
             ISpecProvider specProvider,
             ILogManager logManager)
         {
             _recoveryStep = recoveryStep ?? throw new ArgumentNullException(nameof(recoveryStep));
-            _receiptStorage = receiptStorage ?? throw new ArgumentNullException(nameof(receiptStorage));
+            _receiptFinder = receiptFinder ?? throw new ArgumentNullException(nameof(receiptFinder));
             _specProvider = specProvider ?? throw new ArgumentNullException(nameof(specProvider));
             _dbProvider = dbProvider ?? throw new ArgumentNullException(nameof(dbProvider));
             _logManager = logManager ?? throw new ArgumentNullException(nameof(logManager));
@@ -61,16 +60,16 @@ namespace Nethermind.JsonRpc.Modules.Proof
             ReadOnlyBlockTree readOnlyTree = new ReadOnlyBlockTree(_blockTree);
             IReadOnlyDbProvider readOnlyDbProvider = new ReadOnlyDbProvider(_dbProvider, false);
             ReadOnlyTxProcessingEnv readOnlyTxProcessingEnv = new ReadOnlyTxProcessingEnv(readOnlyDbProvider, readOnlyTree, _specProvider, _logManager);
-            ReadOnlyChainProcessingEnv readOnlyChainProcessingEnv = new ReadOnlyChainProcessingEnv(readOnlyTxProcessingEnv, AlwaysValidBlockValidator.Instance, _recoveryStep, NoBlockRewards.Instance, new InMemoryReceiptStorage(), readOnlyDbProvider, _specProvider, _logManager);
+            ReadOnlyChainProcessingEnv readOnlyChainProcessingEnv = new ReadOnlyChainProcessingEnv(readOnlyTxProcessingEnv, Always.Valid, _recoveryStep, NoBlockRewards.Instance, new InMemoryReceiptStorage(), readOnlyDbProvider, _specProvider, _logManager);
             
             Tracer tracer = new Tracer(
                 readOnlyTxProcessingEnv.StateProvider,
                 readOnlyChainProcessingEnv.ChainProcessor);
             
-            return new ProofModule(tracer, _blockTree, _receiptStorage, _specProvider, _logManager);
+            return new ProofModule(tracer, _blockTree, _receiptFinder, _specProvider, _logManager);
         }
 
-        private static List<JsonConverter> _converters = new List<JsonConverter>
+        private static readonly List<JsonConverter> _converters = new List<JsonConverter>
         {
             new ProofConverter()
         };

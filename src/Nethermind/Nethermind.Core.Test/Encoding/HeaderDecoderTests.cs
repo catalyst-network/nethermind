@@ -15,14 +15,11 @@
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
-using Microsoft.VisualStudio.TestPlatform.ObjectModel;
-using Nethermind.Blockchain;
 using Nethermind.Core.Crypto;
 using Nethermind.Core.Test.Builders;
 using Nethermind.Crypto;
 using Nethermind.Serialization.Rlp;
 using NUnit.Framework;
-using NUnit.Framework.Internal;
 
 namespace Nethermind.Core.Test.Encoding
 {
@@ -39,7 +36,8 @@ namespace Nethermind.Core.Test.Encoding
             
             HeaderDecoder decoder = new HeaderDecoder();
             Rlp rlp = decoder.Encode(header);
-            BlockHeader decoded = decoder.Decode(new Rlp.ValueDecoderContext(rlp.Bytes));
+            var decoderContext = new Rlp.ValueDecoderContext(rlp.Bytes);
+            BlockHeader decoded = decoder.Decode(ref decoderContext);
             decoded.Hash = decoded.CalculateHash();
             
             Assert.AreEqual(header.Hash, decoded.Hash, "hash");
@@ -56,7 +54,8 @@ namespace Nethermind.Core.Test.Encoding
             
             HeaderDecoder decoder = new HeaderDecoder();
             Rlp rlp = decoder.Encode(header);
-            BlockHeader decoded = decoder.Decode(new Rlp.ValueDecoderContext(rlp.Bytes));
+            var decoderContext = new Rlp.ValueDecoderContext(rlp.Bytes);
+            BlockHeader decoded = decoder.Decode(ref decoderContext);
             decoded.Hash = decoded.CalculateHash();
             
             Assert.AreEqual(header.Hash, decoded.Hash, "hash");

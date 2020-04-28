@@ -16,6 +16,7 @@
 
 using System;
 using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
@@ -85,7 +86,7 @@ namespace Nethermind.Runner
                 IConfigProvider configProvider = buildConfigProvider();
                 IInitConfig initConfig = configProvider.GetConfig<IInitConfig>();
                 _logger = new NLogLogger(initConfig.LogFileName, initConfig.LogDirectory);
-                if (_logger.IsInfo) _logger.Info($"Nethermind version: {ClientVersion.Description}");
+                if (_logger.IsDebug) _logger.Debug($"Nethermind version: {ClientVersion.Description}");
                 LogMemoryConfiguration();
 
                 string? pathDbPath = getDbBasePath();
@@ -100,7 +101,7 @@ namespace Nethermind.Runner
                 Console.CancelKeyPress += ConsoleOnCancelKeyPress;
 
                 EthereumJsonSerializer serializer = new EthereumJsonSerializer();
-                if (_logger.IsInfo) _logger.Info($"Nethermind config:\n{serializer.Serialize(initConfig, true)}\n");
+                if (_logger.IsDebug) _logger.Debug($"Nethermind config:\n{serializer.Serialize(initConfig, true)}\n");
 
                 _cancelKeySource = new TaskCompletionSource<object?>();
 
@@ -121,7 +122,7 @@ namespace Nethermind.Runner
 
         private void ConsoleOnCancelKeyPress(object sender, ConsoleCancelEventArgs e)
         {
-            _cancelKeySource?.SetResult(null);
+            _cancelKeySource?.TrySetResult(null);
             e.Cancel = false;
         }
 
@@ -154,6 +155,7 @@ namespace Nethermind.Runner
                 _monitoringService.RegisterMetrics(typeof(Nethermind.JsonRpc.Metrics));
                 _monitoringService.RegisterMetrics(typeof(Nethermind.Trie.Metrics));
                 _monitoringService.RegisterMetrics(typeof(Nethermind.Network.Metrics));
+                _monitoringService.RegisterMetrics(typeof(Nethermind.Synchronization.Metrics));
                 _monitoringService.RegisterMetrics(typeof(Nethermind.TxPool.Metrics));
                 _monitoringService.RegisterMetrics(typeof(Metrics));
 
@@ -227,7 +229,7 @@ namespace Nethermind.Runner
             {
                 rpcModuleProvider.Register(new SingletonModulePool<IWeb3Module>(new Web3Module(logManager), true));
                 JsonRpcService jsonRpcService = new JsonRpcService(rpcModuleProvider, logManager);
-                JsonRpcProcessor jsonRpcProcessor = new JsonRpcProcessor(jsonRpcService, jsonSerializer, jsonRpcConfig, logManager);
+                JsonRpcProcessor jsonRpcProcessor = new JsonRpcProcessor(jsonRpcService, jsonSerializer, jsonRpcConfig, new FileSystem(), logManager);
                 if (initConfig.WebSocketsEnabled)
                 {
                     webSocketsManager.AddModule(new JsonRpcWebSocketsModule(jsonRpcProcessor, jsonSerializer), true);

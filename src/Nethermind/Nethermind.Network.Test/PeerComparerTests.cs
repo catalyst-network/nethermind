@@ -23,17 +23,18 @@ using NUnit.Framework;
 
 namespace Nethermind.Network.Test
 {
+    [Parallelizable(ParallelScope.Self)]
     [TestFixture]
     public class PeerComparerTests
     {
         private INodeStatsManager _statsManager;
-        private PeerManager.PeerComparer _comparer;
+        private PeerComparer _comparer;
 
         [SetUp]
         public void SetUp()
         {
             _statsManager = Substitute.For<INodeStatsManager>();
-            _comparer = new PeerManager.PeerComparer(_statsManager);
+            _comparer = new PeerComparer(_statsManager);
         }
 
         [Test]

@@ -19,7 +19,7 @@ using System.Collections.Generic;
 
 namespace Nethermind.Db
 {
-    public class ReadOnlyDb : ISnapshotableDb
+    public class ReadOnlyDb : ISnapshotableDb, IDbWithSpan
     {
         private readonly MemDb _memDb = new MemDb();
 
@@ -72,7 +72,9 @@ namespace Nethermind.Db
             }
         }
 
-        public IEnumerable<byte[]> GetAll() => _memDb.GetAll();
+        public IEnumerable<KeyValuePair<byte[], byte[]>> GetAll(bool ordered = false) => _memDb.GetAll();
+
+        public IEnumerable<byte[]> GetAllValues(bool ordered = false) => _memDb.GetAllValues();
 
         public void StartBatch()
         {
@@ -98,6 +100,8 @@ namespace Nethermind.Db
             _memDb.Flush();
         }
 
+        public void Clear() { throw new InvalidOperationException(); }
+
         public virtual void ClearTempChanges()
         {
             _memDb.Clear();
@@ -122,6 +126,12 @@ namespace Nethermind.Db
         public int TakeSnapshot()
         {
             return -1;
+        }
+
+        public Span<byte> GetSpan(byte[] key) => this[key].AsSpan();
+
+        public void DangerousReleaseMemory(in Span<byte> span)
+        {
         }
     }
 }

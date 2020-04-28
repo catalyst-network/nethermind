@@ -19,7 +19,6 @@ using System.Security;
 using System.Threading;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
-using Nethermind.Logging;
 
 namespace Nethermind.Wallet
 {
@@ -70,11 +69,6 @@ namespace Nethermind.Wallet
         public Address[] GetAccounts()
         {
             return Array.Empty<Address>();
-        }
-
-        public void Sign(Transaction tx, int chainId)
-        {
-            throw new NotImplementedException();
         }
 
         public bool IsUnlocked(Address address)

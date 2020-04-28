@@ -16,7 +16,6 @@
 
 using System;
 using System.Linq;
-using System.Security.Cryptography.X509Certificates;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
 using Nethermind.Core.Extensions;
@@ -185,11 +184,9 @@ namespace Nethermind.Evm
             {
                 if (transaction.IsContractCreation)
                 {
-                    recipient = ContractAddress.From(sender, _stateProvider.GetNonce(sender) - 1);
-                    if (transaction.IsSystem())
-                    {
-                        recipient = transaction.SenderAddress;
-                    }
+                    recipient = transaction.IsSystem() 
+                        ? transaction.SenderAddress
+                        : ContractAddress.From(sender, _stateProvider.GetNonce(sender) - 1);
 
                     if (_stateProvider.AccountExists(recipient))
                     {

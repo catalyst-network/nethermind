@@ -31,7 +31,6 @@ using Nethermind.Evm;
 using Nethermind.Evm.Tracing;
 using Nethermind.Logging;
 using Nethermind.State;
-using Nethermind.Store;
 using Nethermind.Store.Bloom;
 using Nethermind.Trie;
 using Nethermind.TxPool;
@@ -51,7 +50,7 @@ namespace Nethermind.Facade
         private readonly IEthereumEcdsa _ecdsa;
         private readonly IFilterManager _filterManager;
         private readonly IStateProvider _stateProvider;
-        private readonly IReceiptStorage _receiptStorage;
+        private readonly IReceiptFinder _receiptFinder;
         private readonly IStorageProvider _storageProvider;
         private readonly ITransactionProcessor _transactionProcessor;
         private readonly ILogFinder _logFinder;
@@ -63,15 +62,15 @@ namespace Nethermind.Facade
             IStorageProvider storageProvider,
             IBlockTree blockTree,
             ITxPool txPool,
-            IReceiptStorage receiptStorage,
+            IReceiptFinder receiptStorage,
             IFilterStore filterStore,
             IFilterManager filterManager,
             IWallet wallet,
             ITransactionProcessor transactionProcessor,
             IEthereumEcdsa ecdsa,
-            IBloomStorage bloomStorage, 
-            IReceiptsRecovery receiptsRecovery,
+            IBloomStorage bloomStorage,
             ILogManager logManager,
+            bool isMining,
             int findLogBlockDepthLimit = 1000)
         {
             _stateReader = stateReader ?? throw new ArgumentNullException(nameof(stateReader));
@@ -79,13 +78,15 @@ namespace Nethermind.Facade
             _storageProvider = storageProvider ?? throw new ArgumentNullException(nameof(storageProvider));
             _blockTree = blockTree ?? throw new ArgumentNullException(nameof(blockTree));
             _txPool = txPool ?? throw new ArgumentNullException(nameof(_txPool));
-            _receiptStorage = receiptStorage ?? throw new ArgumentNullException(nameof(receiptStorage));
+            _receiptFinder = receiptStorage ?? throw new ArgumentNullException(nameof(receiptStorage));
             _filterStore = filterStore ?? throw new ArgumentException(nameof(filterStore));
             _filterManager = filterManager ?? throw new ArgumentException(nameof(filterManager));
             _wallet = wallet ?? throw new ArgumentException(nameof(wallet));
             _transactionProcessor = transactionProcessor ?? throw new ArgumentException(nameof(transactionProcessor));
             _ecdsa = ecdsa ?? throw new ArgumentNullException(nameof(ecdsa));
-            _logFinder = new LogFinder(_blockTree, _receiptStorage, bloomStorage, receiptsRecovery, logManager, findLogBlockDepthLimit);
+            IsMining = isMining;
+
+            _logFinder = new LogFinder(_blockTree, _receiptFinder, bloomStorage, logManager, new ReceiptsRecovery(), findLogBlockDepthLimit);
         }
 
         public IReadOnlyCollection<Address> GetWalletAccounts()
@@ -103,28 +104,29 @@ namespace Nethermind.Facade
             _wallet.Sign(tx, _blockTree.ChainId);
         }
 
-        public BlockHeader Head => _blockTree.Head;
+        public Block Head => _blockTree.Head;
 
         public long BestKnown => _blockTree.BestKnownNumber;
 
         public bool IsSyncing => _blockTree.BestSuggestedHeader.Hash != _blockTree.Head.Hash;
+        public bool IsMining { get; }
 
-        public (TxReceipt Receipt, Transaction Transaction) GetTransaction(Keccak transactionHash)
+        public (TxReceipt Receipt, Transaction Transaction) GetTransaction(Keccak txHash)
         {
-            TxReceipt txReceipt = _receiptStorage.Find(transactionHash);
-            if (txReceipt?.BlockHash != null)
+            Keccak blockHash = _receiptFinder.FindBlockHash(txHash);
+            if (blockHash != null)
             {
-                Block block = _blockTree.FindBlock(txReceipt.BlockHash, BlockTreeLookupOptions.RequireCanonical);
+                Block block = _blockTree.FindBlock(blockHash, BlockTreeLookupOptions.TotalDifficultyNotNeeded);
+                TxReceipt txReceipt = _receiptFinder.Get(block).ForTransaction(txHash);
                 return (txReceipt, block?.Transactions[txReceipt.Index]);
             }
-            else if (_txPool.TryGetPendingTransaction(transactionHash, out var transaction))
+
+            if (_txPool.TryGetPendingTransaction(txHash, out var transaction))
             {
                 return (null, transaction);
             }
-            else
-            {
-                return (null, null);
-            }
+
+            return (null, null);
         }
 
         public Transaction[] GetPendingTransactions() => _txPool.GetPendingTransactions();
@@ -145,12 +147,12 @@ namespace Nethermind.Facade
                         throw new SecurityException("Your account is locked. Unlock the account via CLI, personal_unlockAccount or use Trusted Signer.");
                     }
                 }
-                
+
                 tx.Hash = tx.CalculateHash();
                 tx.Timestamp = _timestamper.EpochSeconds;
 
                 AddTxResult result = _txPool.AddTransaction(tx, _blockTree.Head.Number, txHandlingOptions);
-                
+
                 if (result == AddTxResult.OwnNonceAlreadyUsed && (txHandlingOptions & TxHandlingOptions.ManagedNonce) == TxHandlingOptions.ManagedNonce)
                 {
                     // below the temporary NDM support - needs some review
@@ -170,13 +172,8 @@ namespace Nethermind.Facade
 
         public TxReceipt GetReceipt(Keccak txHash)
         {
-            var txReceipt = _receiptStorage.Find(txHash);
-            if (txReceipt != null)
-            {
-                txReceipt.TxHash = txHash;
-            }
-
-            return txReceipt;
+            var blockHash = _receiptFinder.FindBlockHash(txHash);
+            return blockHash != null ? _receiptFinder.Get(blockHash).ForTransaction(txHash) : null;
         }
 
         public class CallOutput
@@ -345,7 +342,7 @@ namespace Nethermind.Facade
 
         public void RunTreeVisitor(ITreeVisitor treeVisitor, Keccak stateRoot)
         {
-            _stateReader.RunTreeVisitor(stateRoot, treeVisitor);
+            _stateReader.RunTreeVisitor(treeVisitor, stateRoot);
         }
 
         public Keccak HeadHash => _blockTree.HeadHash;
@@ -355,6 +352,8 @@ namespace Nethermind.Facade
         public Block FindBlock(long blockNumber, BlockTreeLookupOptions options) => _blockTree.FindBlock(blockNumber, options);
         public BlockHeader FindHeader(Keccak blockHash, BlockTreeLookupOptions options) => _blockTree.FindHeader(blockHash, options);
         public BlockHeader FindHeader(long blockNumber, BlockTreeLookupOptions options) => _blockTree.FindHeader(blockNumber, options);
+        public Keccak FindBlockHash(long blockNumber) => _blockTree.FindBlockHash(blockNumber);
+
         public bool IsMainChain(BlockHeader blockHeader) => _blockTree.IsMainChain(blockHeader);
         public bool IsMainChain(Keccak blockHash) => _blockTree.IsMainChain(blockHash);
     }

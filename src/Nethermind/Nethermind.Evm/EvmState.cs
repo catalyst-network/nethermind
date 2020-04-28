@@ -20,7 +20,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using Nethermind.Core;
-using Nethermind.Dirichlet.Numerics;
 
 namespace Nethermind.Evm
 {
@@ -73,7 +72,7 @@ namespace Nethermind.Evm
         public int StackHead = 0;
 
         public VmState(long gasAvailable, ExecutionEnvironment env, ExecutionType executionType, bool isPrecompile, bool isTopLevel, bool isContinuation)
-            : this(gasAvailable, env, executionType, isPrecompile, isTopLevel, -1, -1, 0L, 0L, false, isContinuation)
+            : this(gasAvailable, env, executionType, isPrecompile, isTopLevel, -1, -1, 0L, 0L, false, isContinuation, false)
         {
             GasAvailable = gasAvailable;
             Env = env;
@@ -90,7 +89,8 @@ namespace Nethermind.Evm
             long outputDestination,
             long outputLength,
             bool isStatic,
-            bool isContinuation)
+            bool isContinuation,
+            bool isCreateOnPreExistingAccount)
         {
             GasAvailable = gasAvailable;
             ExecutionType = executionType;
@@ -103,6 +103,7 @@ namespace Nethermind.Evm
             OutputLength = outputLength;
             IsStatic = isStatic;
             IsContinuation = isContinuation;
+            IsCreateOnPreExistingAccount = isCreateOnPreExistingAccount;
         }
 
         public Address From
@@ -141,6 +142,7 @@ namespace Nethermind.Evm
         internal long OutputLength { get; }
         public bool IsStatic { get; }
         public bool IsContinuation { get; set; }
+        public bool IsCreateOnPreExistingAccount { get; }
         public int StateSnapshot { get; }
         public int StorageSnapshot { get; }
         public long Refund { get; set; }

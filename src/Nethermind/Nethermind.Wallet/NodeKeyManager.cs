@@ -17,9 +17,7 @@
 using System;
 using System.IO;
 using System.Security;
-using Nethermind.Core;
 using Nethermind.Core.Attributes;
-using Nethermind.Core.Crypto;
 using Nethermind.Crypto;
 using Nethermind.KeyStore;
 using Nethermind.KeyStore.Config;
@@ -78,7 +76,8 @@ namespace Nethermind.Wallet
                 if (!File.Exists(newPath))
                 {
                     if (_logger.IsInfo) _logger.Info("Generating private key for the node (no node key in configuration) - stored in plain + key store for JSON RPC unlocking");
-                    PrivateKey nodeKey = File.Exists(oldPath) ? new PrivateKey(File.ReadAllBytes(oldPath)) : new PrivateKeyGenerator(_cryptoRandom).Generate();
+                    using var privateKeyGenerator = new PrivateKeyGenerator(_cryptoRandom);
+                    PrivateKey nodeKey = File.Exists(oldPath) ? new PrivateKey(File.ReadAllBytes(oldPath)) : privateKeyGenerator.Generate();
                     var keyStoreDirectory = _config.KeyStoreDirectory.GetApplicationResourcePath();
                     Directory.CreateDirectory(keyStoreDirectory);
                     File.WriteAllBytes(newPath, nodeKey.KeyBytes);

@@ -17,10 +17,11 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using Nethermind.Blockchain.Find;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Core;
 using Nethermind.Core.Attributes;
 using Nethermind.Core.Crypto;
-using Nethermind.Dirichlet.Numerics;
 using Nethermind.Logging;
 using Nethermind.TxPool;
 

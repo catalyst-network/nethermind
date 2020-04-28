@@ -17,8 +17,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using Castle.Components.DictionaryAdapter;
 using FluentAssertions;
+using Nethermind.Blockchain.Producers;
 using Nethermind.Core;
 using Nethermind.Specs.Forks;
 using Nethermind.Core.Test.Builders;
@@ -26,11 +26,9 @@ using Nethermind.Db;
 using Nethermind.Dirichlet.Numerics;
 using Nethermind.Logging;
 using Nethermind.State;
-using Nethermind.Store;
 using Nethermind.TxPool;
 using NSubstitute;
 using NUnit.Framework;
-using NUnit.Framework.Internal;
 
 namespace Nethermind.Blockchain.Test
 {
@@ -141,9 +139,9 @@ namespace Nethermind.Blockchain.Test
             transactionPool.GetPendingTransactions().Returns(testCase.Transactions.ToArray());
             SetAccountStates(testCase.MissingAddresses);
 
-            PendingTxSelector selector = new PendingTxSelector(transactionPool, stateReader, LimboLogs.Instance, testCase.MinGasPriceForMining);
-
-            IEnumerable<Transaction> selectedTransactions = selector.SelectTransactions(stateProvider.StateRoot, testCase.GasLimit);
+            TxPoolTxSource poolTxSource = new TxPoolTxSource(transactionPool, stateReader, LimboLogs.Instance, testCase.MinGasPriceForMining);
+            
+            IEnumerable<Transaction> selectedTransactions = poolTxSource.GetTransactions(Build.A.BlockHeader.WithStateRoot(stateProvider.StateRoot).TestObject, testCase.GasLimit);
             selectedTransactions.Should().BeEquivalentTo(testCase.ExpectedSelectedTransactions);
         }
     }

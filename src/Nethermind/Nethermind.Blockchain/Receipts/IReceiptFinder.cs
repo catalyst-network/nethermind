@@ -14,6 +14,7 @@
 //  You should have received a copy of the GNU Lesser General Public License
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
+using System;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
 
@@ -21,6 +22,10 @@ namespace Nethermind.Blockchain.Receipts
 {
     public interface IReceiptFinder
     {
-        TxReceipt Find(Keccak txHash);
+        Keccak FindBlockHash(Keccak txHash);
+        TxReceipt[] Get(Block block);
+        TxReceipt[] Get(Keccak blockHash);
+        bool CanGetReceiptsByHash(long blockNumber);
+        bool TryGetReceiptsIterator(long blockNumber, Keccak blockHash, out ReceiptsIterator iterator);
     }
 }

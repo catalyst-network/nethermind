@@ -15,24 +15,21 @@
 //  along with the Nethermind. If not, see <http://www.gnu.org/licenses/>.
 
 using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using Nethermind.Blockchain;
 using Nethermind.Blockchain.Synchronization;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
 using Nethermind.Dirichlet.Numerics;
 using Nethermind.Logging;
-using Nethermind.Network.Config;
 using Nethermind.Network.Rlpx;
 using Nethermind.Stats;
 using Nethermind.Stats.Model;
+using Nethermind.Synchronization;
 using Nethermind.TxPool;
 
 namespace Nethermind.Network.P2P.Subprotocols.Les
 {
-    public class LesProtocolHandler : SyncPeerProtocolHandlerBase, IZeroProtocolHandler, ISyncPeer
+    public class LesProtocolHandler : SyncPeerProtocolHandlerBase, IZeroProtocolHandler
     {
         public override string Name => "les3";
 
@@ -42,7 +39,7 @@ namespace Nethermind.Network.P2P.Subprotocols.Les
             INodeStatsManager statsManager,
             ISyncServer syncServer,
             ILogManager logManager,
-            ITxPool txPool): base(session, serializer, statsManager, syncServer, logManager, txPool)
+            ITxPool txPool): base(session, serializer, statsManager, syncServer, txPool, logManager)
         {
 
         }
@@ -194,7 +191,7 @@ namespace Nethermind.Network.P2P.Subprotocols.Les
                 InitiateDisconnect(DisconnectReason.UselessPeer, "One of the Rinkeby nodes stuck at Constantinople transition");
             }
 
-            TotalDifficultyOnSessionStart = status.TotalDifficulty;
+            TotalDifficulty = status.TotalDifficulty;
             RequestedAnnounceType = status.AnnounceType.Value;
 
             ProtocolInitialized?.Invoke(this, eventArgs);

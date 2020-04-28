@@ -17,21 +17,14 @@
 using System;
 using System.Collections.Generic;
 using Nethermind.Blockchain;
-using Nethermind.Blockchain.Filters;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Blockchain.Receipts;
 using Nethermind.Blockchain.Rewards;
 using Nethermind.Blockchain.Tracing;
 using Nethermind.Blockchain.Validators;
-using Nethermind.Core.Crypto;
 using Nethermind.Core.Specs;
-using Nethermind.Crypto;
 using Nethermind.Db;
-using Nethermind.Specs;
-using Nethermind.Facade;
 using Nethermind.Logging;
-using Nethermind.PubSub.Models;
-using Nethermind.Store;
-using Nethermind.Wallet;
 using Newtonsoft.Json;
 
 namespace Nethermind.JsonRpc.Modules.Trace
@@ -52,7 +45,7 @@ namespace Nethermind.JsonRpc.Modules.Trace
             IBlockTree blockTree,
             IBlockDataRecoveryStep recoveryStep,
             IRewardCalculatorSource rewardCalculatorSource,
-            IReceiptStorage receiptStorage,
+            IReceiptStorage receiptFinder,
             ISpecProvider specProvider,
             ILogManager logManager)
         {
@@ -60,7 +53,7 @@ namespace Nethermind.JsonRpc.Modules.Trace
             _blockTree = blockTree ?? throw new ArgumentNullException(nameof(blockTree));
             _recoveryStep = recoveryStep ?? throw new ArgumentNullException(nameof(recoveryStep));
             _rewardCalculatorSource = rewardCalculatorSource ?? throw new ArgumentNullException(nameof(rewardCalculatorSource));
-            _receiptStorage = receiptStorage ?? throw new ArgumentNullException(nameof(receiptStorage));
+            _receiptStorage = receiptFinder ?? throw new ArgumentNullException(nameof(receiptFinder));
             _specProvider = specProvider ?? throw new ArgumentNullException(nameof(specProvider));
             _logManager = logManager ?? throw new ArgumentNullException(nameof(logManager));
             _logger = logManager.GetClassLogger();
@@ -71,7 +64,7 @@ namespace Nethermind.JsonRpc.Modules.Trace
             var readOnlyTree = new ReadOnlyBlockTree(_blockTree);
             var readOnlyDbProvider = new ReadOnlyDbProvider(_dbProvider, false);
             var readOnlyTxProcessingEnv = new ReadOnlyTxProcessingEnv(readOnlyDbProvider, readOnlyTree, _specProvider, _logManager);
-            var readOnlyChainProcessingEnv = new ReadOnlyChainProcessingEnv(readOnlyTxProcessingEnv, AlwaysValidBlockValidator.Instance, _recoveryStep, _rewardCalculatorSource.Get(readOnlyTxProcessingEnv.TransactionProcessor), _receiptStorage, readOnlyDbProvider, _specProvider, _logManager);
+            var readOnlyChainProcessingEnv = new ReadOnlyChainProcessingEnv(readOnlyTxProcessingEnv, Always.Valid, _recoveryStep, _rewardCalculatorSource.Get(readOnlyTxProcessingEnv.TransactionProcessor), _receiptStorage, readOnlyDbProvider, _specProvider, _logManager);
             Tracer tracer = new Tracer(readOnlyChainProcessingEnv.StateProvider, readOnlyChainProcessingEnv.ChainProcessor);
             
             return new TraceModule(_receiptStorage, tracer, readOnlyTree);

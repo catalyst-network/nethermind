@@ -17,6 +17,7 @@
 using FluentAssertions;
 using Nethermind.Blockchain;
 using Nethermind.Blockchain.Filters;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Blockchain.Receipts;
 using Nethermind.Config;
 using Nethermind.Core;
@@ -38,7 +39,6 @@ using Nethermind.Logging;
 using Nethermind.Monitoring;
 using Nethermind.Network;
 using Nethermind.Serialization.Json;
-using Nethermind.Store;
 using Nethermind.Store.Bloom;
 using Nethermind.TxPool;
 using Nethermind.Wallet;

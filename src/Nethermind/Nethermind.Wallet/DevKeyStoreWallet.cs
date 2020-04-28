@@ -40,23 +40,27 @@ namespace Nethermind.Wallet
         public event EventHandler<AccountLockedEventArgs> AccountLocked;
         public event EventHandler<AccountUnlockedEventArgs> AccountUnlocked;
 
-        public DevKeyStoreWallet(IKeyStore keyStore, ILogManager logManager)
+        public DevKeyStoreWallet(IKeyStore keyStore, ILogManager logManager, bool createTestAccounts = true)
         {
             _keyStore = keyStore;
             _logger = logManager.GetClassLogger() ?? throw new ArgumentNullException(nameof(logManager));
-            KeySeed[31] = 1;
-            for (int i = 0; i < 3; i++)
-            {
-                PrivateKey key = new PrivateKey(KeySeed);
-                if (GetAccounts().All(a => a != key.Address))
-                {
-                    SecureString secureString = new SecureString();
-                    secureString.MakeReadOnly();
-                    _keyStore.StoreKey(key, secureString);
-                }
 
-                _unlockedAccounts.Add(key.Address, key);
-                KeySeed[31]++;
+            if (createTestAccounts)
+            {
+                KeySeed[31] = 1;
+                for (int i = 0; i < 3; i++)
+                {
+                    PrivateKey key = new PrivateKey(KeySeed);
+                    if (GetAccounts().All(a => a != key.Address))
+                    {
+                        SecureString secureString = new SecureString();
+                        secureString.MakeReadOnly();
+                        _keyStore.StoreKey(key, secureString);
+                    }
+
+                    _unlockedAccounts.Add(key.Address, key);
+                    KeySeed[31]++;
+                }
             }
         }
 
@@ -108,13 +112,11 @@ namespace Nethermind.Wallet
             AccountLocked?.Invoke(this, new AccountLockedEventArgs(address));
             return _unlockedAccounts.Remove(address);
         }
-
+        
         public void Sign(Transaction tx, int chainId)
         {
             if (_logger.IsDebug) _logger?.Debug($"Signing transaction: {tx.Value} to {tx.To}");
-            Keccak hash = Keccak.Compute(Rlp.Encode(tx, true, true, chainId).Bytes);
-            tx.Signature = Sign(hash, tx.SenderAddress);
-            tx.Signature.V = tx.Signature.V + 8 + 2 * chainId;
+            IBasicWallet.Sign(this, tx, chainId);
         }
 
         public bool IsUnlocked(Address address) => _unlockedAccounts.ContainsKey(address);

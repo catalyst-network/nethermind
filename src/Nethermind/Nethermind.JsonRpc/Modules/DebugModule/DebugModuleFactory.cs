@@ -17,6 +17,7 @@
 using System;
 using System.Collections.Generic;
 using Nethermind.Blockchain;
+using Nethermind.Blockchain.Processing;
 using Nethermind.Blockchain.Receipts;
 using Nethermind.Blockchain.Rewards;
 using Nethermind.Blockchain.Tracing;
@@ -24,9 +25,7 @@ using Nethermind.Blockchain.Validators;
 using Nethermind.Config;
 using Nethermind.Core.Specs;
 using Nethermind.Db;
-using Nethermind.Specs;
 using Nethermind.Logging;
-using Nethermind.Store;
 using Newtonsoft.Json;
 
 namespace Nethermind.JsonRpc.Modules.DebugModule
