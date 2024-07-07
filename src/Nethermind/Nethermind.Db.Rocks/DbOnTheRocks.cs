@@ -54,7 +54,7 @@ public class DbOnTheRocks : IDb, ITunableDb
 
     internal DbOptions? DbOptions { get; private set; }
 
-    public string Name { get; }
+    public virtual string Name { get; }
 
     private static long _maxRocksSize;
 
@@ -305,12 +305,12 @@ public class DbOnTheRocks : IDb, ITunableDb
         _fileSystem.File.Delete(corruptMarker);
     }
 
-    protected internal void UpdateReadMetrics()
+    protected internal virtual void UpdateReadMetrics()
     {
         Interlocked.Increment(ref _totalReads);
     }
 
-    protected internal void UpdateWriteMetrics()
+    protected internal virtual void UpdateWriteMetrics()
     {
         Interlocked.Increment(ref _totalWrites);
     }
